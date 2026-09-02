@@ -1,12 +1,12 @@
 ; Inno Setup script. Defines can be passed from ISCC:
-;   /DMyAppVersion=1.0.0
+;   /DMyAppVersion=0.5.0
 ;   /DSourceDir=release\RelWithDebInfo
 ;   /DOutputDir=release
-;   /DOutputBaseFilename=obs-remote-deck-1.0.0-windows-installer
+;   /DOutputBaseFilename=obs-remote-deck-0.5.0-windows-installer
 
 #define MyAppName "Remote Deck for OBS"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "0.5.0"
 #endif
 #define MyAppPublisher "Remote Deck"
 #ifndef SourceDir
