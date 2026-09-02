@@ -40,6 +40,7 @@ target_sources(
   PRIVATE
     src/device-auth.cpp
     src/device-auth.hpp
+    src/network-log.hpp
     src/obs-audio.cpp
     src/obs-audio.hpp
     src/plugin-controller.cpp
@@ -47,6 +48,8 @@ target_sources(
     src/plugin-main.cpp
     src/protocol.cpp
     src/protocol.hpp
+    src/qt-tls-setup.cpp
+    src/qt-tls-setup.hpp
     src/settings.cpp
     src/settings.hpp
     src/settings-dialog.cpp

@@ -41,7 +41,7 @@ struct PluginSettings {
 	bool requiresTls() const;
 };
 
-constexpr auto kDefaultRemoteDeckApiBase = "https://remotedeck.gg";
+constexpr auto kDefaultRemoteDeckApiBase = "https://www.remotedeck.gg";
 constexpr auto kDefaultLocalRemoteDeckApiBase = "http://localhost:3000";
 constexpr auto kRemoteDeckPluginPath = "/ws/plugin";
 

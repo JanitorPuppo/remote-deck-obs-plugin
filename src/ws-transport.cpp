@@ -18,6 +18,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "ws-transport.hpp"
 
+#include <obs-module.h>
+#include <plugin-support.h>
+
 #include <QAbstractSocket>
 #include <QCryptographicHash>
 #include <QRandomGenerator>
@@ -163,12 +166,18 @@ void WsTransport::connectTo(const QUrl &url, const QList<QPair<QByteArray, QByte
 	const bool tls = scheme == QLatin1String("wss");
 	const quint16 port = static_cast<quint16>(url.port(tls ? 443 : 80));
 
+	obs_log(LOG_INFO, "Remote Deck websocket connect: %s (tls=%s port=%u)",
+		url.toString(QUrl::RemovePassword).toUtf8().constData(), tls ? "yes" : "no", port);
+
 	if (tls) {
 		auto *ssl = new QSslSocket(this);
 		socket = ssl;
 		connect(ssl, &QSslSocket::encrypted, this, &WsTransport::sendHandshake);
 		connect(ssl, &QSslSocket::sslErrors, this, [this](const QList<QSslError> &errors) {
-			Q_UNUSED(errors);
+			for (const QSslError &error : errors) {
+				obs_log(LOG_WARNING, "Remote Deck websocket TLS error: %s",
+					error.errorString().toUtf8().constData());
+			}
 			fail(QStringLiteral("TLS handshake failed"));
 		});
 		ssl->connectToHostEncrypted(url.host(), port);
@@ -180,9 +189,12 @@ void WsTransport::connectTo(const QUrl &url, const QList<QPair<QByteArray, QByte
 	}
 
 	connect(socket, &QAbstractSocket::readyRead, this, &WsTransport::onReadyRead);
-	connect(socket, &QAbstractSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
-		if (socket)
+	connect(socket, &QAbstractSocket::errorOccurred, this, [this](QAbstractSocket::SocketError code) {
+		if (socket) {
+			obs_log(LOG_WARNING, "Remote Deck websocket socket error %d: %s", static_cast<int>(code),
+				socket->errorString().toUtf8().constData());
 			fail(socket->errorString());
+		}
 	});
 	connect(socket, &QAbstractSocket::disconnected, this, [this]() { emit disconnected(); });
 
@@ -281,6 +293,8 @@ void WsTransport::readHandshake()
 
 	const QList<QByteArray> lines = header.split('\n');
 	if (lines.isEmpty() || !lines.first().contains("101")) {
+		const QByteArray statusLine = lines.isEmpty() ? QByteArray("(empty)") : lines.first().trimmed();
+		obs_log(LOG_WARNING, "Remote Deck websocket upgrade rejected: %s", statusLine.constData());
 		fail(QStringLiteral("upstream rejected the WebSocket upgrade"));
 		return;
 	}
@@ -303,6 +317,7 @@ void WsTransport::readHandshake()
 
 	handshaking = false;
 	connectTimer->stop();
+	obs_log(LOG_INFO, "Remote Deck websocket connected");
 	emit connected();
 }
 

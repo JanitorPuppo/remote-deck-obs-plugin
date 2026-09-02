@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QWidget;
 class PluginController;
 
 class SettingsDialog : public QDialog {
@@ -37,6 +38,7 @@ private:
 	void persistForm();
 	void refreshStatus();
 	void onAuthenticate();
+	void onCancelAuthentication();
 	void onSignOut();
 
 	PluginController *controller = nullptr;
@@ -45,8 +47,10 @@ private:
 	QLineEdit *localApiBaseEdit = nullptr;
 #endif
 	QPushButton *authenticateBtn = nullptr;
+	QPushButton *cancelAuthBtn = nullptr;
 	QPushButton *signOutBtn = nullptr;
 	QLabel *userCodeHint = nullptr;
 	QLabel *userCodeLabel = nullptr;
 	QLabel *statusLabel = nullptr;
+	QWidget *codePanel = nullptr;
 };

@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "upstream-client.hpp"
+#include "network-log.hpp"
 #include "ws-transport.hpp"
 
 #include <obs-module.h>
@@ -128,8 +129,7 @@ void UpstreamClient::openSocket()
 	}
 
 	setStatus(attempt == 0 ? UpstreamStatus::Connecting : UpstreamStatus::Reconnecting);
-	obs_log(LOG_INFO, "connecting to %s://%s", url.scheme().toUtf8().constData(),
-		settings.hostLabel().toUtf8().constData());
+	remote_deck_log::logEndpoint("Remote Deck upstream connect", url);
 
 	QList<QPair<QByteArray, QByteArray>> headers;
 	const QString auth = settings.authorizationHeader();

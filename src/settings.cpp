@@ -157,8 +157,12 @@ PluginSettings loadSettings()
 				settings.autoConnect = true;
 
 			obs_data_release(data);
-			obs_log(LOG_INFO, "loaded settings (auto_connect=%s)",
-				settings.autoConnect ? "true" : "false");
+			obs_log(LOG_INFO,
+				"loaded settings (auto_connect=%s authenticated=%s auth_api=%s wss=%s studio=%s)",
+				settings.autoConnect ? "true" : "false", settings.isAuthenticated() ? "true" : "false",
+				settings.authApiBase().toUtf8().constData(),
+				settings.remoteDeckWssUrl.isEmpty() ? "(default)" : settings.remoteDeckWssUrl.toUtf8().constData(),
+				settings.studioName.isEmpty() ? "(none)" : settings.studioName.toUtf8().constData());
 		}
 	}
 	if (ensureInstanceId(settings))

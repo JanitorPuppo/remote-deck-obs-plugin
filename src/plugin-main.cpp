@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "plugin-controller.hpp"
+#include "qt-tls-setup.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -58,6 +59,9 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 
 bool obs_module_load(void)
 {
+	if (!ensureQtTlsBackend())
+		obs_log(LOG_WARNING, "HTTPS/WSS will fail until Qt TLS backends are installed with the plugin");
+
 	controller = new PluginController();
 	if (!controller->init()) {
 		delete controller;

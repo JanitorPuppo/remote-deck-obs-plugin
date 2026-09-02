@@ -48,6 +48,7 @@ function(set_target_properties_plugin target)
   )
 
   target_install_resources(${target})
+  target_install_qt_tls(${target})
 
   get_target_property(target_sources ${target} SOURCES)
   set(target_ui_files ${target_sources})
@@ -105,4 +106,54 @@ function(target_add_resource target resource)
     VERBATIM
   )
   source_group("Resources" FILES "${resource}")
+endfunction()
+
+function(target_install_qt_tls target)
+  if(NOT WIN32 OR NOT TARGET Qt6::Network)
+    return()
+  endif()
+
+  set(_qt_plugins_dir "")
+  if(TARGET Qt6::qmake)
+    get_target_property(_qt_qmake Qt6::qmake IMPORTED_LOCATION)
+    if(_qt_qmake)
+      execute_process(
+        COMMAND "${_qt_qmake}" -query QT_INSTALL_PLUGINS
+        OUTPUT_VARIABLE _qt_plugins_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+      )
+    endif()
+  endif()
+
+  if(NOT _qt_plugins_dir)
+    foreach(_prefix IN LISTS CMAKE_PREFIX_PATH)
+      if(EXISTS "${_prefix}/plugins/tls/qschannelbackend.dll")
+        set(_qt_plugins_dir "${_prefix}/plugins")
+        break()
+      endif()
+    endforeach()
+  endif()
+
+  if(NOT _qt_plugins_dir OR NOT EXISTS "${_qt_plugins_dir}/tls/qschannelbackend.dll")
+    message(WARNING "Qt TLS plugins not found; HTTPS/WSS may fail at runtime")
+    return()
+  endif()
+
+  set(_tls_files
+      "${_qt_plugins_dir}/tls/qschannelbackend.dll"
+      "${_qt_plugins_dir}/tls/qcertonlybackend.dll"
+  )
+
+  install(FILES ${_tls_files} DESTINATION "${target}/data/tls")
+
+  add_custom_command(
+    TARGET ${target}
+    POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/${target}/data/tls"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${_tls_files}
+            "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/${target}/data/tls"
+    COMMENT "Copy ${target} Qt TLS backends to rundir"
+    VERBATIM
+  )
 endfunction()

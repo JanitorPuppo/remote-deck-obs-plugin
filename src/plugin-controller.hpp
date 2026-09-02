@@ -48,6 +48,7 @@ public:
 	void connectUpstream();
 	void disconnectUpstream();
 	void authenticate();
+	void cancelAuthentication();
 	void signOut();
 	bool isAuthenticating() const;
 	QString userCode() const { return authUserCode; }

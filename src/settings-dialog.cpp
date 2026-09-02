@@ -22,12 +22,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 
 #include <QDialogButtonBox>
+#include <QFont>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QWidget>
 
 SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 	: QDialog(parent),
@@ -38,9 +41,12 @@ SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 			       + QStringLiteral(" (local dev)")
 #endif
 	);
-	setMinimumWidth(460);
+	setMinimumWidth(480);
+	setMinimumHeight(360);
 
 	auto *root = new QVBoxLayout(this);
+	root->setSpacing(10);
+	root->setContentsMargins(16, 16, 16, 16);
 
 	auto *form = new QFormLayout();
 	machineLabelEdit = new QLineEdit(this);
@@ -55,43 +61,75 @@ SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 #ifdef REMOTE_DECK_LOCAL_DEV
 	auto *devForm = new QFormLayout();
 	localApiBaseEdit = new QLineEdit(this);
-	localApiBaseEdit->setPlaceholderText(QString::fromUtf8(kDefaultLocalRemoteDeckApiBase));
+	localApiBaseEdit->setPlaceholderText(QString::fromUtf8(kDefaultLocalRemoteDeckApiBase)
+						   + QStringLiteral(" or https://www.remotedeck.gg"));
 	devForm->addRow(QString::fromUtf8(obs_module_text("RemoteDeck.LocalApiBase")), localApiBaseEdit);
 	root->addLayout(devForm);
 	connect(localApiBaseEdit, &QLineEdit::editingFinished, this, &SettingsDialog::persistForm);
 #endif
 
-	auto *actions = new QHBoxLayout();
 	authenticateBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.Authenticate")), this);
-	signOutBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.SignOut")), this);
-	actions->addWidget(authenticateBtn);
-	actions->addWidget(signOutBtn);
-	actions->addStretch(1);
-	root->addLayout(actions);
+	auto *authRow = new QHBoxLayout();
+	authRow->addWidget(authenticateBtn);
+	authRow->addStretch(1);
+	root->addLayout(authRow);
 
-	userCodeHint = new QLabel(QString::fromUtf8(obs_module_text("RemoteDeck.UserCodeHint")), this);
+	codePanel = new QWidget(this);
+	auto *codeLayout = new QVBoxLayout(codePanel);
+	codeLayout->setContentsMargins(0, 12, 0, 12);
+	codeLayout->setSpacing(16);
+	codeLayout->addStretch(1);
+
+	userCodeHint = new QLabel(QString::fromUtf8(obs_module_text("RemoteDeck.UserCodeHint")), codePanel);
 	userCodeHint->setWordWrap(true);
-	userCodeHint->hide();
-	root->addWidget(userCodeHint);
+	userCodeHint->setAlignment(Qt::AlignCenter);
+	userCodeHint->setMinimumWidth(360);
+	codeLayout->addWidget(userCodeHint, 0, Qt::AlignHCenter);
 
-	userCodeLabel = new QLabel(this);
+	userCodeLabel = new QLabel(codePanel);
 	userCodeLabel->setAlignment(Qt::AlignCenter);
 	userCodeLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-	userCodeLabel->setStyleSheet(
-		QStringLiteral("font-size: 22px; font-weight: 600; letter-spacing: 0.12em; padding: 8px 0;"));
-	userCodeLabel->hide();
-	root->addWidget(userCodeLabel);
+	QFont codeFont = userCodeLabel->font();
+	codeFont.setPointSize(28);
+	codeFont.setWeight(QFont::DemiBold);
+	codeFont.setLetterSpacing(QFont::AbsoluteSpacing, 3.0);
+	userCodeLabel->setFont(codeFont);
+	userCodeLabel->setMinimumHeight(QFontMetrics(codeFont).height() + 16);
+	userCodeLabel->setContentsMargins(0, 8, 0, 8);
+	codeLayout->addWidget(userCodeLabel, 0, Qt::AlignHCenter);
+
+	codeLayout->addStretch(1);
+	codePanel->setMinimumHeight(140);
+	codePanel->hide();
+	root->addWidget(codePanel, 1);
 
 	statusLabel = new QLabel(this);
 	statusLabel->setWordWrap(true);
 	root->addWidget(statusLabel);
 
+	cancelAuthBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.CancelAuth")), this);
+	signOutBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.SignOut")), this);
+	cancelAuthBtn->hide();
+	signOutBtn->hide();
+
+	auto *bottomActions = new QHBoxLayout();
+	bottomActions->setContentsMargins(0, 4, 0, 0);
+	bottomActions->addWidget(cancelAuthBtn);
+	bottomActions->addWidget(signOutBtn);
+	bottomActions->addStretch(1);
+	root->addLayout(bottomActions);
+
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
 	root->addWidget(buttons);
 
 	connect(authenticateBtn, &QPushButton::clicked, this, &SettingsDialog::onAuthenticate);
+	connect(cancelAuthBtn, &QPushButton::clicked, this, &SettingsDialog::onCancelAuthentication);
 	connect(signOutBtn, &QPushButton::clicked, this, &SettingsDialog::onSignOut);
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
+	connect(this, &QDialog::finished, this, [this](int) {
+		if (controller->isAuthenticating())
+			controller->cancelAuthentication();
+	});
 	connect(machineLabelEdit, &QLineEdit::editingFinished, this, &SettingsDialog::persistForm);
 	connect(controller, &PluginController::statusChanged, this, &SettingsDialog::refreshStatus);
 
@@ -126,30 +164,45 @@ void SettingsDialog::refreshStatus()
 	const bool busy = controller->isAuthenticating();
 
 	authenticateBtn->setEnabled(!busy);
+	authenticateBtn->setVisible(!busy);
 	authenticateBtn->setText(QString::fromUtf8(
 		settings.isAuthenticated() ? obs_module_text("RemoteDeck.Reauthenticate")
 					   : obs_module_text("RemoteDeck.Authenticate")));
+	cancelAuthBtn->setVisible(busy);
 	signOutBtn->setVisible(settings.isAuthenticated());
 	signOutBtn->setEnabled(!busy);
 
 	const QString userCode = controller->userCode();
 	const bool showCode = busy && !userCode.isEmpty();
-	userCodeHint->setVisible(showCode);
-	userCodeLabel->setVisible(showCode);
+	codePanel->setVisible(showCode);
 	userCodeLabel->setText(userCode);
 
-	QString line = QString::fromUtf8(obs_module_text("RemoteDeck.Status")) + QStringLiteral(": ") +
-		       controller->statusText();
-	if (settings.isAuthenticated() && !settings.studioName.isEmpty())
-		line = QString::fromUtf8(obs_module_text("RemoteDeck.SignedIn")).arg(settings.studioName) +
-		       QStringLiteral("\n") + line;
-	statusLabel->setText(line);
+	statusLabel->setVisible(!showCode);
+	if (!showCode) {
+		QString line = QString::fromUtf8(obs_module_text("RemoteDeck.Status")) + QStringLiteral(": ") +
+			       controller->statusText();
+		if (settings.isAuthenticated() && !settings.studioName.isEmpty())
+			line = QString::fromUtf8(obs_module_text("RemoteDeck.SignedIn")).arg(settings.studioName) +
+			       QStringLiteral("\n") + line;
+		statusLabel->setText(line);
+	}
+
+	if (showCode)
+		setMinimumHeight(400);
+	else
+		setMinimumHeight(360);
 }
 
 void SettingsDialog::onAuthenticate()
 {
 	persistForm();
 	controller->authenticate();
+}
+
+void SettingsDialog::onCancelAuthentication()
+{
+	controller->cancelAuthentication();
+	refreshStatus();
 }
 
 void SettingsDialog::onSignOut()

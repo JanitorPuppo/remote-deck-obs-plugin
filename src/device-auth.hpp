@@ -51,6 +51,7 @@ private:
 
 	QNetworkAccessManager *nam = nullptr;
 	QTimer *pollTimer = nullptr;
+	QNetworkReply *activeReply = nullptr;
 	QString apiBase;
 	QString deviceCode;
 	QString pollToken;

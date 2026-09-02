@@ -130,8 +130,23 @@ void PluginController::authenticate()
 	authUserCode.clear();
 	authStatus = QStringLiteral("Opening Remote Deck…");
 	emit statusChanged();
+	obs_log(LOG_INFO, "Remote Deck authenticate requested (api_base=%s machine=%s instance_id=%s)",
+		currentSettings.authApiBase().toUtf8().constData(),
+		currentSettings.resolvedMachineLabel().toUtf8().constData(),
+		currentSettings.instanceId.toUtf8().constData());
 	deviceAuth.start(currentSettings.authApiBase(), currentSettings.resolvedMachineLabel(),
 			 currentSettings.instanceId, QString::fromUtf8(PLUGIN_VERSION));
+}
+
+void PluginController::cancelAuthentication()
+{
+	if (!deviceAuth.isBusy())
+		return;
+	deviceAuth.cancel();
+	authUserCode.clear();
+	authStatus.clear();
+	obs_log(LOG_INFO, "Remote Deck authorization cancelled");
+	emit statusChanged();
 }
 
 void PluginController::signOut()
