@@ -74,7 +74,8 @@
       "name": "windows-ci-x64",
       "inherits": ["windows-x64"],
       "displayName": "Windows x64 CI build",
-      "description": "Build for Windows x64 on CI",
+      "description": "Build for Windows x64 on CI (GitHub runners ship VS 2022, not VS 2026)",
+      "generator": "Visual Studio 17 2022",
       "cacheVariables": {
         "CMAKE_COMPILE_WARNING_AS_ERROR": true
       }

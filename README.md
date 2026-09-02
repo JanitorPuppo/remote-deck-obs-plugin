@@ -1,59 +1,38 @@
-# Remote Deck OBS plugin
+# Remote Deck for OBS
 
-Standalone OBS Studio **Tools** plugin for Remote Deck. It authenticates with Remote Deck, dials *out* to the studio control socket, then applies producer commands (mute / volume) inside OBS through libobs. Producers never receive an OBS host, port, or obs-websocket password.
+This plugin lets Remote Deck mute and change volume on the computer running OBS.
 
-This is not a source or filter. Settings live in **Tools → Remote Deck**: machine name plus **Authenticate with Remote Deck**. The browser handles sign-in and studio approval. See [docs/REMOTE-DECK-CONTRACT.md](docs/REMOTE-DECK-CONTRACT.md).
+You need a Remote Deck studio. This plugin is made by Remote Deck, not by the OBS Project.
 
-Public/release builds always authenticate against production Remote Deck.
+## Install on Windows
 
-## Windows build
+You need OBS Studio 32 or newer.
 
-Requires Visual Studio 2022 or 2026 Build Tools with the C++ workload, CMake 3.28+, and a network connection on first configure (the OBS plugin template downloads OBS sources and prebuilt Qt/deps). The `windows-x64` preset uses the VS 2026 generator. **Do not enable `ENABLE_REMOTE_DECK_LOCAL_DEV` on a DLL you ship.**
+1. Quit OBS. In OBS, click **File**, then **Exit**. Closing the window is not always enough.
+2. Download **obs-remote-deck-*-windows-installer.exe** from [Releases](https://github.com/JanitorPuppo/remote-deck-obs-plugin/releases).
+3. Run the installer. If Windows asks for permission, click Yes.
+4. Open OBS. Click **Tools**, then **Remote Deck**.
+5. Click **Authenticate with Remote Deck** and sign in in the browser that opens.
 
-```powershell
-cmake --preset windows-x64
-cmake --build --preset windows-x64
-```
+That is the whole setup.
 
-To point Remote Deck mode at a local API (field in the dialog, default `http://localhost:3000`):
+If Windows says it protected your PC, click **More info**, then **Run anyway**.
 
-```powershell
-cmake --preset windows-x64-dev
-cmake --build --preset windows-x64-dev
-```
+A zip is also on the release page if you would rather copy the files yourself. See that zip's README.
 
-Install with `./scripts/install-dev.sh` (quits if OBS is still running). The settings window title includes `(local dev)` so you can tell the builds apart.
+## If something is wrong
 
-The first configure can take several minutes. Output lands under `build_x64/rundir/RelWithDebInfo/`.
+- **Tools → Remote Deck is missing.** Quit OBS with File → Exit, run the installer again, then reopen OBS.
+- **Sign-in does not work.** Check that this computer is online. Use the installer from Releases, not a leftover test copy.
 
-### Install
+## Other platforms
 
-Quit OBS, then copy the built plugin folder into OBS's plugin search path (OBS 32+), or run `./scripts/install-dev.sh` for the local-dev build:
+Windows is what we ship today. Mac and Linux are not ready.
 
-```
-C:\ProgramData\obs-studio\plugins\obs-remote-deck\bin\64bit\obs-remote-deck.dll
-C:\ProgramData\obs-studio\plugins\obs-remote-deck\data\locale\en-US.ini
-```
+## For developers
 
-Fully quit and reopen OBS. `%APPDATA%\obs-studio\plugins` is not scanned.
-
-The CMake install layout is:
-
-```
-obs-remote-deck/bin/64bit/obs-remote-deck.dll
-obs-remote-deck/data/locale/en-US.ini
-```
-
-Restart OBS. Open **Tools → Remote Deck**.
-
-macOS and Linux presets from the [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate) CMake are kept; Windows is the first-class local build.
-
-## Security notes
-
-- The plugin only makes outbound connections to Remote Deck.
-- Tokens are stored in the OBS module config on the streamer PC. They are not written to the OBS log.
-- TLS (`wss`) is required except for localhost.
+How to build from source is in [BUILD.md](BUILD.md). The wire format is in [PROTOCOL.md](PROTOCOL.md).
 
 ## License
 
-GPL-2.0-or-later, same as the OBS plugin template this repo is adapted from.
+GPL-2.0-or-later.

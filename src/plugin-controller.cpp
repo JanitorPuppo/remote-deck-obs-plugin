@@ -41,8 +41,9 @@ PluginController::PluginController(QObject *parent) : QObject(parent)
 		if (client.isConnected())
 			sendInputs();
 	});
-	connect(&deviceAuth, &DeviceAuth::openedBrowser, this, [this](const QString &) {
-		authStatus = QStringLiteral("Waiting for you to authorize in the browser…");
+	connect(&deviceAuth, &DeviceAuth::openedBrowser, this, [this](const QString &, const QString &userCode) {
+		authUserCode = userCode;
+		authStatus = QStringLiteral("Enter the code in your browser to finish signing in.");
 		emit statusChanged();
 	});
 	connect(&deviceAuth, &DeviceAuth::completed, this, &PluginController::onAuthCompleted);
@@ -126,6 +127,7 @@ void PluginController::authenticate()
 	currentSettings.machineLabel = currentSettings.resolvedMachineLabel();
 	ensureInstanceId(currentSettings);
 	::saveSettings(currentSettings);
+	authUserCode.clear();
 	authStatus = QStringLiteral("Opening Remote Deck…");
 	emit statusChanged();
 	deviceAuth.start(currentSettings.authApiBase(), currentSettings.resolvedMachineLabel(),
@@ -140,6 +142,7 @@ void PluginController::signOut()
 	currentSettings.remoteDeckWssUrl.clear();
 	currentSettings.studioId.clear();
 	currentSettings.studioName.clear();
+	authUserCode.clear();
 	authStatus.clear();
 	::saveSettings(currentSettings);
 	client.setSettings(currentSettings);
@@ -159,6 +162,7 @@ void PluginController::onAuthCompleted(const QString &token, const QString &apiB
 	currentSettings.remoteDeckWssUrl = wssUrl;
 	currentSettings.studioId = studioId;
 	currentSettings.studioName = studioName;
+	authUserCode.clear();
 	authStatus.clear();
 	::saveSettings(currentSettings);
 	emit statusChanged();
@@ -167,6 +171,7 @@ void PluginController::onAuthCompleted(const QString &token, const QString &apiB
 
 void PluginController::onAuthFailed(const QString &message)
 {
+	authUserCode.clear();
 	authStatus = message;
 	emit statusChanged();
 }

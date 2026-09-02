@@ -46,5 +46,7 @@ private:
 #endif
 	QPushButton *authenticateBtn = nullptr;
 	QPushButton *signOutBtn = nullptr;
+	QLabel *userCodeHint = nullptr;
+	QLabel *userCodeLabel = nullptr;
 	QLabel *statusLabel = nullptr;
 };

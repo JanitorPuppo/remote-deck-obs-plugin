@@ -37,7 +37,7 @@ public:
 	bool isBusy() const { return busy; }
 
 signals:
-	void openedBrowser(const QString &verificationUri);
+	void openedBrowser(const QString &verificationUri, const QString &userCode);
 	void completed(const QString &token, const QString &apiBase, const QString &wssUrl, const QString &studioId,
 		       const QString &studioName);
 	void failed(const QString &message);

@@ -1,22 +1,22 @@
-# Protocol fixture
+# Test server
 
-A tiny Node WebSocket server that speaks [PROTOCOL.md](../PROTOCOL.md). The plugin itself talks only to Remote Deck; this process is for inspecting frames without a full OBS debug loop.
+A tiny stand-in for Remote Deck. Use it to watch plugin messages without opening OBS. Streamers do not need this.
 
-```powershell
+```
 npm install
 npm start
 ```
 
-Listens on `ws://127.0.0.1:8787`. Optional `--token test-token` requires `Authorization: Bearer test-token`.
+It listens on `ws://127.0.0.1:8787`. Add `--token test-token` if you want it to require `Authorization: Bearer test-token`.
 
-Stdin commands (type into the fixture process):
+Type commands into that window:
 
-| Command | Sends |
+| You type | What it sends |
 | --- | --- |
-| `mute Mic/Aux true` | `input.mute` |
-| `volume Mic/Aux -12` | `input.volume` |
-| `list` | `inputs.get` |
-| `ping` | `ping` |
-| `raw {"v":1,"type":"ping"}` | verbatim frame |
+| `mute Mic/Aux true` | mute |
+| `volume Mic/Aux -12` | volume |
+| `list` | ask for the mixer list |
+| `ping` | ping |
+| `raw {"v":1,"type":"ping"}` | that JSON as-is |
 
-The fixture prints every inbound frame (`hello`, `inputs`, `state`, `error`). `npm test` checks envelope shapes without OBS.
+Inbound messages print in the same window. `npm test` checks message shapes and does not need OBS.

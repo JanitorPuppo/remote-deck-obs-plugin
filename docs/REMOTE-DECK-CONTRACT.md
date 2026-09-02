@@ -8,8 +8,8 @@ Implemented in the `remote-deck` API (not this repo):
 
 | Step | Request |
 | --- | --- |
-| Start | `POST {apiBase}/public/plugin-auth/v1/device` `{ machineLabel, instanceId, clientId: "obs-remote-deck", clientVersion }` |
-| Browser | Opens `verificationUri` (`/plugin/authorize/:deviceCode`). Owner signs in and approves a studio they own. |
+| Start | `POST {apiBase}/public/plugin-auth/v1/device` `{ machineLabel, instanceId, clientId: "obs-remote-deck", clientVersion }` returns `{ deviceCode, userCode, verificationUri, pollToken, … }` |
+| Browser | Opens `verificationUri` (`/plugin/authorize/:deviceCode`). The plugin displays `userCode` (not `deviceCode`). The user types that code on the authorize page, then approves a studio. |
 | Poll | `POST {apiBase}/public/plugin-auth/v1/token` `{ deviceCode, pollToken }` until `{ status: "complete", studioPluginToken, apiBase, wssUrl, studioId, studioName }` |
 
 Default `apiBase` is `https://remotedeck.gg`. Public/release builds always use that. A **local-dev-only** compile (`ENABLE_REMOTE_DECK_LOCAL_DEV`, preset `windows-x64-dev`) adds a **Local Remote Deck URL** field (default `http://localhost:3000`) so you can authenticate against a hosted API on this machine. That field is compiled out of production DLLs.

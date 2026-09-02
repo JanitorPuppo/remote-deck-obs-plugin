@@ -53,10 +53,19 @@ function Package {
         ErrorAction = 'SilentlyContinue'
         Path = @(
             "${ProjectRoot}/release/${ProductName}-*-windows-*.zip"
+            "${ProjectRoot}/release/${ProductName}-*-windows-installer.exe"
         )
     }
 
     Remove-Item @RemoveArgs
+
+    $StageDir = "${ProjectRoot}/release/${Configuration}"
+    Remove-Item -Force -ErrorAction SilentlyContinue -Path "${StageDir}/obs-remote-deck/bin/64bit/*.pdb"
+    Copy-Item -Force -Path "${ProjectRoot}/scripts/README.md" -Destination "${StageDir}/README.md"
+
+    Log-Group "Building Windows installer..."
+    & "${ProjectRoot}/scripts/compile-installer.ps1" -SourceDir $StageDir -Version $ProductVersion -OutputDir "${ProjectRoot}/release"
+    Log-Group
 
     Log-Group "Archiving ${ProductName}..."
     $CompressArgs = @{

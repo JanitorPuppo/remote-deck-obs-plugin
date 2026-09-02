@@ -111,18 +111,22 @@ void DeviceAuth::onDeviceStarted(QNetworkReply *reply)
 	}
 	const QJsonObject obj = doc.object();
 	deviceCode = obj.value("deviceCode").toString();
+	const QString userCode = obj.value("userCode").toString().trimmed();
 	pollToken = obj.value("pollToken").toString();
-	const QString uri = obj.value("verificationUriComplete").toString();
+	QString uri = obj.value("verificationUriComplete").toString();
+	if (uri.isEmpty())
+		uri = obj.value("verificationUri").toString();
 	intervalMs = qMax(1000, obj.value("interval").toInt(3) * 1000);
 	const QUrl verificationUrl(uri);
-	if (deviceCode.isEmpty() || pollToken.isEmpty() || uri.isEmpty() || !isSafeBrowserUrl(verificationUrl)) {
+	if (deviceCode.isEmpty() || userCode.isEmpty() || pollToken.isEmpty() || uri.isEmpty() ||
+	    !isSafeBrowserUrl(verificationUrl)) {
 		finishError(QStringLiteral("Remote Deck returned an unexpected response."));
 		return;
 	}
 
 	obs_log(LOG_INFO, "opened Remote Deck authorization in the browser");
 	QDesktopServices::openUrl(verificationUrl);
-	emit openedBrowser(uri);
+	emit openedBrowser(uri, userCode);
 	pollTimer->start(intervalMs);
 }
 

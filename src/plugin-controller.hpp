@@ -50,6 +50,7 @@ public:
 	void authenticate();
 	void signOut();
 	bool isAuthenticating() const;
+	QString userCode() const { return authUserCode; }
 	QString statusText() const;
 
 signals:
@@ -70,5 +71,6 @@ private:
 	DeviceAuth deviceAuth;
 	SettingsDialog *dialog = nullptr;
 	QString authStatus;
+	QString authUserCode;
 	bool started = false;
 };

@@ -69,6 +69,19 @@ SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 	actions->addStretch(1);
 	root->addLayout(actions);
 
+	userCodeHint = new QLabel(QString::fromUtf8(obs_module_text("RemoteDeck.UserCodeHint")), this);
+	userCodeHint->setWordWrap(true);
+	userCodeHint->hide();
+	root->addWidget(userCodeHint);
+
+	userCodeLabel = new QLabel(this);
+	userCodeLabel->setAlignment(Qt::AlignCenter);
+	userCodeLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	userCodeLabel->setStyleSheet(
+		QStringLiteral("font-size: 22px; font-weight: 600; letter-spacing: 0.12em; padding: 8px 0;"));
+	userCodeLabel->hide();
+	root->addWidget(userCodeLabel);
+
 	statusLabel = new QLabel(this);
 	statusLabel->setWordWrap(true);
 	root->addWidget(statusLabel);
@@ -118,6 +131,12 @@ void SettingsDialog::refreshStatus()
 					   : obs_module_text("RemoteDeck.Authenticate")));
 	signOutBtn->setVisible(settings.isAuthenticated());
 	signOutBtn->setEnabled(!busy);
+
+	const QString userCode = controller->userCode();
+	const bool showCode = busy && !userCode.isEmpty();
+	userCodeHint->setVisible(showCode);
+	userCodeLabel->setVisible(showCode);
+	userCodeLabel->setText(userCode);
 
 	QString line = QString::fromUtf8(obs_module_text("RemoteDeck.Status")) + QStringLiteral(": ") +
 		       controller->statusText();
