@@ -1,0 +1,35 @@
+# Exclude everything
+/*
+
+# Except for default project files
+!/.github
+!/build-aux
+!/cmake
+!/data
+!/src
+!.clang-format
+!.gersemirc
+!.gitignore
+!buildspec.json
+!CMakeLists.txt
+!CMakePresets.json
+!LICENSE
+!README.md
+!PROTOCOL.md
+!/docs
+!/docs/**
+!/scripts
+!/scripts/**
+!/fixture
+!/fixture/**
+fixture/node_modules/
+fixture/package-lock.json
+
+# Exclude lock files
+*.lock.json
+
+# Exclude macOS legacy resource forks
+.DS_Store
+
+# Exclude CMake build number cache
+/cmake/.CMakeBuildNumber
