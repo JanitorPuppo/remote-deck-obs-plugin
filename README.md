@@ -1,8 +1,8 @@
 # Remote Deck for OBS
 
-This plugin lets Remote Deck mute and change volume on the computer running OBS.
-
-You need a Remote Deck studio. This plugin is made by Remote Deck, not by the OBS Project.
+This plugin lets a Remote Deck producer within your studio to control OBS remotely and securely. Remote Deck handles user  permission management.  
+  
+This plugin facilitates the communication between your OBS and Remote Deck. Currently, this only supports volume and mute controls for audio sources.
 
 ## Install on Windows
 
@@ -14,24 +14,10 @@ You need OBS Studio 32 or newer.
 4. Open OBS. Click **Tools**, then **Remote Deck**.
 5. Click **Authenticate with Remote Deck** and sign in in the browser that opens.
 
-That is the whole setup.
-
-If Windows says it protected your PC, click **More info**, then **Run anyway**.
-
-A zip is also on the release page if you would rather copy the files yourself. See that zip's README.
-
 ## If something is wrong
 
 - **Tools → Remote Deck is missing.** Quit OBS with File → Exit, run the installer again, then reopen OBS.
 - **Sign-in does not work.** Check that this computer is online. Use the installer from Releases, not a leftover test copy.
-
-## Other platforms
-
-Windows is what we ship today. Mac and Linux are not ready.
-
-## For developers
-
-How to build from source is in [BUILD.md](BUILD.md). The wire format is in [PROTOCOL.md](PROTOCOL.md).
 
 ## License
 
