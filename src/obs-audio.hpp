@@ -22,11 +22,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <functional>
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 class ObsAudio : public QObject {
 	Q_OBJECT
@@ -40,6 +42,7 @@ public:
 	void refresh();
 
 	QJsonArray listInputs() const;
+	QJsonObject listSnapshot() const;
 	bool setMuted(const QString &name, bool muted, const QString &id = {});
 	bool setVolumeDb(const QString &name, double volumeDb, const QString &id = {});
 
@@ -49,12 +52,16 @@ signals:
 
 private:
 	static bool isAudioInput(obs_source_t *source);
-	static QJsonObject describeSource(obs_source_t *source);
-	static bool enumInputsCallback(void *param, obs_source_t *source);
+	static QJsonObject describeSource(obs_source_t *source,
+					 const QHash<QString, QStringList> *membership = nullptr);
+	static QHash<QString, QStringList> buildSceneMembership();
+	static bool enumSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param);
 
 	obs_source_t *findSource(const QString &name, const QString &id) const;
 	void trackSource(obs_source_t *source);
 	void untrackSource(obs_source_t *source);
+	void trackScenes();
+	void untrackScenes();
 	void emitState(obs_source_t *source);
 	void invokeOnQt(const std::function<void()> &fn);
 
@@ -63,7 +70,9 @@ private:
 	static void onSourceMute(void *data, calldata_t *cd);
 	static void onSourceVolume(void *data, calldata_t *cd);
 	static void onSourceRename(void *data, calldata_t *cd);
+	static void onSceneItemMutated(void *data, calldata_t *cd);
 
 	QSet<QString> trackedIds;
+	QSet<QString> trackedSceneIds;
 	bool running = false;
 };

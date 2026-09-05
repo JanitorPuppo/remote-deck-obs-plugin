@@ -217,9 +217,7 @@ void PluginController::sendHelloAndInputs()
 
 void PluginController::sendInputs(const QString &id)
 {
-	QJsonObject payload;
-	payload.insert("inputs", audio.listInputs());
-	client.sendFrame(makeFrame(protocol::kInputs, payload, id));
+	client.sendFrame(makeFrame(protocol::kInputs, audio.listSnapshot(), id));
 }
 
 void PluginController::applyOnObsThread(const std::function<void()> &fn)

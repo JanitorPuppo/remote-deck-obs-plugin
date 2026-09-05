@@ -50,7 +50,9 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 		return;
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		controller->start();
-	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED) {
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED ||
+		   event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED ||
+		   event == OBS_FRONTEND_EVENT_SCENE_CHANGED) {
 		controller->refreshSources();
 	} else if (event == OBS_FRONTEND_EVENT_EXIT) {
 		controller->stop();

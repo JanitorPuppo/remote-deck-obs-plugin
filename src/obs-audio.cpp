@@ -18,12 +18,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "obs-audio.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
 #include <algorithm>
 #include <cmath>
 
+#include <QJsonArray>
 #include <QMetaObject>
 #include <QPointer>
 
@@ -64,31 +66,138 @@ bool ObsAudio::isAudioInput(obs_source_t *source)
 	return (obs_source_get_output_flags(source) & OBS_SOURCE_AUDIO) != 0;
 }
 
-QJsonObject ObsAudio::describeSource(obs_source_t *source)
+struct SceneMembershipWalk {
+	QString topSceneName;
+	QSet<QString> walking;
+	QHash<QString, QStringList> *membership = nullptr;
+};
+
+QJsonObject ObsAudio::describeSource(obs_source_t *source, const QHash<QString, QStringList> *membership)
 {
 	QJsonObject obj;
 	const char *uuid = obs_source_get_uuid(source);
 	const char *name = obs_source_get_name(source);
-	obj.insert("id", QString::fromUtf8(uuid ? uuid : ""));
+	const QString id = QString::fromUtf8(uuid ? uuid : "");
+	obj.insert("id", id);
 	obj.insert("name", QString::fromUtf8(name ? name : ""));
 	obj.insert("muted", obs_source_muted(source));
 	obj.insert("volumeDb", volumeToDb(obs_source_get_volume(source)));
+	if (membership && !id.isEmpty()) {
+		const QStringList sceneNames = membership->value(id);
+		if (!sceneNames.isEmpty()) {
+			QJsonArray names;
+			for (const QString &sceneName : sceneNames)
+				names.append(sceneName);
+			obj.insert("sceneNames", names);
+		}
+	}
 	return obj;
 }
 
-bool ObsAudio::enumInputsCallback(void *param, obs_source_t *source)
+bool ObsAudio::enumSceneItems(obs_scene_t *, obs_sceneitem_t *item, void *param)
 {
-	auto *list = static_cast<QJsonArray *>(param);
-	if (isAudioInput(source))
-		list->append(describeSource(source));
+	auto *ctx = static_cast<SceneMembershipWalk *>(param);
+	obs_source_t *src = obs_sceneitem_get_source(item);
+	if (!src || !ctx || !ctx->membership)
+		return true;
+
+	if (isAudioInput(src)) {
+		const char *uuid = obs_source_get_uuid(src);
+		const QString id = QString::fromUtf8(uuid ? uuid : "");
+		if (!id.isEmpty() && !ctx->membership->value(id).contains(ctx->topSceneName))
+			(*ctx->membership)[id].append(ctx->topSceneName);
+	}
+
+	if (obs_sceneitem_is_group(item)) {
+		obs_sceneitem_group_enum_items(item, enumSceneItems, param);
+		return true;
+	}
+
+	if (obs_source_get_type(src) != OBS_SOURCE_TYPE_SCENE)
+		return true;
+
+	const char *uuid = obs_source_get_uuid(src);
+	const QString nestedId = QString::fromUtf8(uuid ? uuid : "");
+	obs_scene_t *nested = obs_scene_from_source(src);
+	if (!nested || nestedId.isEmpty() || ctx->walking.contains(nestedId))
+		return true;
+	ctx->walking.insert(nestedId);
+	obs_scene_enum_items(nested, enumSceneItems, param);
+	ctx->walking.remove(nestedId);
 	return true;
+}
+
+QHash<QString, QStringList> ObsAudio::buildSceneMembership()
+{
+	QHash<QString, QStringList> membership;
+	obs_frontend_source_list list{};
+	obs_frontend_get_scenes(&list);
+	for (size_t i = 0; i < list.sources.num; i++) {
+		obs_source_t *sceneSource = list.sources.array[i];
+		obs_scene_t *scene = obs_scene_from_source(sceneSource);
+		const char *name = obs_source_get_name(sceneSource);
+		if (!scene || !name || !name[0])
+			continue;
+		SceneMembershipWalk ctx;
+		ctx.topSceneName = QString::fromUtf8(name);
+		ctx.membership = &membership;
+		const char *uuid = obs_source_get_uuid(sceneSource);
+		if (uuid)
+			ctx.walking.insert(QString::fromUtf8(uuid));
+		obs_scene_enum_items(scene, enumSceneItems, &ctx);
+	}
+	obs_frontend_source_list_free(&list);
+	return membership;
 }
 
 QJsonArray ObsAudio::listInputs() const
 {
-	QJsonArray list;
-	obs_enum_sources(enumInputsCallback, &list);
-	return list;
+	return listSnapshot().value(QStringLiteral("inputs")).toArray();
+}
+
+QJsonObject ObsAudio::listSnapshot() const
+{
+	const QHash<QString, QStringList> membership = buildSceneMembership();
+	QJsonArray inputs;
+	struct Ctx {
+		QJsonArray *list;
+		const QHash<QString, QStringList> *membership;
+	} ctx{&inputs, &membership};
+	obs_enum_sources(
+		[](void *param, obs_source_t *source) {
+			auto *c = static_cast<Ctx *>(param);
+			if (isAudioInput(source))
+				c->list->append(describeSource(source, c->membership));
+			return true;
+		},
+		&ctx);
+
+	QJsonArray scenes;
+	obs_frontend_source_list list{};
+	obs_frontend_get_scenes(&list);
+	for (size_t i = 0; i < list.sources.num; i++) {
+		const char *name = obs_source_get_name(list.sources.array[i]);
+		if (name && name[0])
+			scenes.append(QString::fromUtf8(name));
+	}
+	obs_frontend_source_list_free(&list);
+
+	QString current;
+	obs_source_t *program = obs_frontend_get_current_scene();
+	if (program) {
+		const char *name = obs_source_get_name(program);
+		if (name)
+			current = QString::fromUtf8(name);
+		obs_source_release(program);
+	}
+
+	QJsonObject payload;
+	payload.insert("inputs", inputs);
+	if (!current.isEmpty())
+		payload.insert("currentProgramScene", current);
+	if (!scenes.isEmpty())
+		payload.insert("scenes", scenes);
+	return payload;
 }
 
 void ObsAudio::invokeOnQt(const std::function<void()> &fn)
@@ -202,7 +311,47 @@ void ObsAudio::emitState(obs_source_t *source)
 {
 	if (!isAudioInput(source))
 		return;
-	emit inputStateChanged(describeSource(source));
+	const QHash<QString, QStringList> membership = buildSceneMembership();
+	emit inputStateChanged(describeSource(source, &membership));
+}
+
+void ObsAudio::onSceneItemMutated(void *data, calldata_t *)
+{
+	auto *self = static_cast<ObsAudio *>(data);
+	if (!self)
+		return;
+	self->invokeOnQt([self]() { emit self->inputsChanged(); });
+}
+
+void ObsAudio::trackScenes()
+{
+	obs_frontend_source_list list{};
+	obs_frontend_get_scenes(&list);
+	for (size_t i = 0; i < list.sources.num; i++) {
+		obs_source_t *src = list.sources.array[i];
+		const char *uuid = obs_source_get_uuid(src);
+		const QString id = QString::fromUtf8(uuid ? uuid : "");
+		if (id.isEmpty() || trackedSceneIds.contains(id))
+			continue;
+		trackedSceneIds.insert(id);
+		signal_handler_t *sh = obs_source_get_signal_handler(src);
+		signal_handler_connect(sh, "item_add", onSceneItemMutated, this);
+		signal_handler_connect(sh, "item_remove", onSceneItemMutated, this);
+	}
+	obs_frontend_source_list_free(&list);
+}
+
+void ObsAudio::untrackScenes()
+{
+	obs_frontend_source_list list{};
+	obs_frontend_get_scenes(&list);
+	for (size_t i = 0; i < list.sources.num; i++) {
+		signal_handler_t *sh = obs_source_get_signal_handler(list.sources.array[i]);
+		signal_handler_disconnect(sh, "item_add", onSceneItemMutated, this);
+		signal_handler_disconnect(sh, "item_remove", onSceneItemMutated, this);
+	}
+	obs_frontend_source_list_free(&list);
+	trackedSceneIds.clear();
 }
 
 void ObsAudio::start()
@@ -214,6 +363,7 @@ void ObsAudio::start()
 	signal_handler_connect(core, "source_create", onSourceCreate, this);
 	signal_handler_connect(core, "source_destroy", onSourceDestroy, this);
 	refresh();
+	trackScenes();
 }
 
 void ObsAudio::stop()
@@ -224,6 +374,7 @@ void ObsAudio::stop()
 	signal_handler_t *core = obs_get_signal_handler();
 	signal_handler_disconnect(core, "source_create", onSourceCreate, this);
 	signal_handler_disconnect(core, "source_destroy", onSourceDestroy, this);
+	untrackScenes();
 
 	struct Ctx {
 		ObsAudio *self;
@@ -248,6 +399,7 @@ void ObsAudio::refresh()
 			return true;
 		},
 		&ctx);
+	trackScenes();
 }
 
 obs_source_t *ObsAudio::findSource(const QString &name, const QString &id) const
