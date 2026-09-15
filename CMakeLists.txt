@@ -58,7 +58,23 @@ target_sources(
     src/upstream-client.hpp
     src/ws-transport.cpp
     src/ws-transport.hpp
+    src/auto-update.cpp
+    src/auto-update.hpp
 )
+
+if(WIN32)
+  add_executable(obs-remote-deck-updater src/updater-main.cpp)
+  set_target_properties(obs-remote-deck-updater PROPERTIES OUTPUT_NAME obs-remote-deck-updater)
+  install(TARGETS obs-remote-deck-updater RUNTIME DESTINATION "${CMAKE_PROJECT_NAME}/bin/64bit")
+  add_custom_command(
+    TARGET obs-remote-deck-updater
+    POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:obs-remote-deck-updater>"
+            "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/${CMAKE_PROJECT_NAME}/bin/64bit/$<TARGET_FILE_NAME:obs-remote-deck-updater>"
+    COMMENT "Copy obs-remote-deck-updater to rundir"
+    VERBATIM
+  )
+endif()
 
 if(ENABLE_REMOTE_DECK_LOCAL_DEV)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE REMOTE_DECK_LOCAL_DEV=1)

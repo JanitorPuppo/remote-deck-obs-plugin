@@ -10,9 +10,13 @@ You need OBS Studio 32 or newer.
 
 1. Quit OBS. In OBS, click **File**, then **Exit**. Closing the window is not always enough.
 2. Download **obs-remote-deck-*-windows-installer.exe** from [Releases](https://github.com/JanitorPuppo/remote-deck-obs-plugin/releases).
-3. Run the installer. If Windows asks for permission, click Yes.
+3. Run the installer. New installs go to your user profile (`%AppData%`) and do not require administrator rights.
 4. Open OBS. Click **Tools**, then **Remote Deck**.
 5. Click **Authenticate with Remote Deck** and sign in in the browser that opens.
+
+If you installed an older all-users copy under ProgramData, the first run of a new installer may ask for administrator permission once to remove that copy. After that, updates from **Tools → Remote Deck** can install silently when you choose **Update now** (OBS must fully exit via **File → Exit**, not just the tray).
+
+Release builds upload **latest.json** next to the installer so the plugin can verify downloads before installing.
 
 ## If something is wrong
 

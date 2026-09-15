@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "plugin-controller.hpp"
 
 #include <obs-module.h>
+#include <plugin-support.h>
 
 #include <QDialogButtonBox>
 #include <QFont>
@@ -31,6 +32,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#ifndef REMOTE_DECK_LOCAL_DEV
+#include "auto-update.hpp"
+#endif
 
 SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 	: QDialog(parent),
@@ -107,6 +112,26 @@ SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 	statusLabel->setWordWrap(true);
 	root->addWidget(statusLabel);
 
+	updatePanel = new QWidget(this);
+	auto *updateLayout = new QVBoxLayout(updatePanel);
+	updateLayout->setContentsMargins(0, 8, 0, 0);
+	updateLayout->setSpacing(6);
+	versionLabel = new QLabel(updatePanel);
+	updateStatusLabel = new QLabel(updatePanel);
+	updateStatusLabel->setWordWrap(true);
+	auto *updateButtons = new QHBoxLayout();
+	checkUpdateBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.CheckForUpdates")), updatePanel);
+	installUpdateBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.UpdateNow")), updatePanel);
+	skipUpdateBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.UpdateSkip")), updatePanel);
+	updateButtons->addWidget(checkUpdateBtn);
+	updateButtons->addWidget(installUpdateBtn);
+	updateButtons->addWidget(skipUpdateBtn);
+	updateButtons->addStretch(1);
+	updateLayout->addWidget(versionLabel);
+	updateLayout->addWidget(updateStatusLabel);
+	updateLayout->addLayout(updateButtons);
+	root->addWidget(updatePanel);
+
 	cancelAuthBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.CancelAuth")), this);
 	signOutBtn = new QPushButton(QString::fromUtf8(obs_module_text("RemoteDeck.SignOut")), this);
 	cancelAuthBtn->hide();
@@ -132,6 +157,12 @@ SettingsDialog::SettingsDialog(PluginController *controller_, QWidget *parent)
 	});
 	connect(machineLabelEdit, &QLineEdit::editingFinished, this, &SettingsDialog::persistForm);
 	connect(controller, &PluginController::statusChanged, this, &SettingsDialog::refreshStatus);
+	connect(checkUpdateBtn, &QPushButton::clicked, this, &SettingsDialog::onCheckForUpdates);
+	connect(installUpdateBtn, &QPushButton::clicked, this, &SettingsDialog::onInstallUpdate);
+	connect(skipUpdateBtn, &QPushButton::clicked, this, &SettingsDialog::onSkipUpdate);
+#ifndef REMOTE_DECK_LOCAL_DEV
+	connect(controller->updates(), &AutoUpdate::stateChanged, this, &SettingsDialog::refreshUpdateSection);
+#endif
 
 	reload();
 }
@@ -145,6 +176,51 @@ void SettingsDialog::reload()
 		localApiBaseEdit->setText(settings.remoteDeckApiBase);
 #endif
 	refreshStatus();
+	refreshUpdateSection();
+}
+
+void SettingsDialog::refreshUpdateSection()
+{
+#ifdef REMOTE_DECK_LOCAL_DEV
+	if (updatePanel)
+		updatePanel->hide();
+	return;
+#else
+	if (!updatePanel)
+		return;
+	updatePanel->show();
+	versionLabel->setText(QString::fromUtf8(obs_module_text("RemoteDeck.PluginVersion"))
+				      .arg(QString::fromUtf8(PLUGIN_VERSION)));
+
+	AutoUpdate *updates = controller->updates();
+	updateStatusLabel->setText(updates->statusText());
+	const bool busy = updates->isBusy();
+	checkUpdateBtn->setEnabled(!busy);
+	installUpdateBtn->setVisible(updates->updateAvailable() || updates->updateReady());
+	installUpdateBtn->setEnabled(!busy && (updates->updateAvailable() || updates->updateReady()));
+	skipUpdateBtn->setVisible(updates->updateAvailable() && !updates->updateReady());
+	skipUpdateBtn->setEnabled(!busy && updates->updateAvailable() && !updates->updateReady());
+#endif
+}
+
+void SettingsDialog::onCheckForUpdates()
+{
+#ifndef REMOTE_DECK_LOCAL_DEV
+	controller->updates()->checkNow();
+#endif
+}
+
+void SettingsDialog::onInstallUpdate()
+{
+	controller->downloadAndInstallUpdate();
+}
+
+void SettingsDialog::onSkipUpdate()
+{
+#ifndef REMOTE_DECK_LOCAL_DEV
+	controller->updates()->skipAvailableVersion();
+	refreshUpdateSection();
+#endif
 }
 
 void SettingsDialog::persistForm()

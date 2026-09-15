@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include "auto-update.hpp"
 #include "device-auth.hpp"
 #include "obs-audio.hpp"
 #include "settings.hpp"
@@ -54,6 +55,9 @@ public:
 	QString userCode() const { return authUserCode; }
 	QString statusText() const;
 
+	AutoUpdate *updates() { return &autoUpdate; }
+	void downloadAndInstallUpdate();
+
 signals:
 	void statusChanged();
 
@@ -71,8 +75,11 @@ private:
 	ObsAudio audio;
 	UpstreamClient client;
 	DeviceAuth deviceAuth;
+	AutoUpdate autoUpdate;
 	SettingsDialog *dialog = nullptr;
 	QString authStatus;
 	QString authUserCode;
 	bool started = false;
+	bool pendingUpdateInstall = false;
+	QString updatePromptShownForVersion;
 };

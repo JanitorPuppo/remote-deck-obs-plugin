@@ -6,7 +6,8 @@ param(
     [string] $Version,
     [Parameter(Mandatory = $true)]
     [string] $OutputDir,
-    [string] $IssFile
+    [string] $IssFile,
+    [string] $GitHubRepo = 'JanitorPuppo/remote-deck-obs-plugin'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,4 +60,22 @@ if ($LASTEXITCODE -ne 0) {
     throw "ISCC failed with exit code $LASTEXITCODE"
 }
 
-Write-Host "Wrote $(Join-Path $OutputDir "$outputName.exe")"
+$installerPath = Join-Path $OutputDir "$outputName.exe"
+$sha256 = (Get-FileHash -Algorithm SHA256 -Path $installerPath).Hash.ToLowerInvariant()
+$installerUrl = "https://github.com/$GitHubRepo/releases/download/$Version/$outputName.exe"
+$notesUrl = "https://github.com/$GitHubRepo/releases/tag/$Version"
+
+$manifest = [ordered]@{
+    version  = $Version
+    notesUrl = $notesUrl
+    windows  = [ordered]@{
+        installerUrl = $installerUrl
+        sha256       = $sha256
+    }
+}
+
+$manifestPath = Join-Path $OutputDir 'latest.json'
+$manifest | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding utf8
+
+Write-Host "Wrote $installerPath"
+Write-Host "Wrote $manifestPath (sha256=$sha256)"

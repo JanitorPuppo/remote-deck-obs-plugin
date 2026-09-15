@@ -40,6 +40,10 @@ private:
 	void onAuthenticate();
 	void onCancelAuthentication();
 	void onSignOut();
+	void onCheckForUpdates();
+	void onInstallUpdate();
+	void onSkipUpdate();
+	void refreshUpdateSection();
 
 	PluginController *controller = nullptr;
 	QLineEdit *machineLabelEdit = nullptr;
@@ -53,4 +57,10 @@ private:
 	QLabel *userCodeLabel = nullptr;
 	QLabel *statusLabel = nullptr;
 	QWidget *codePanel = nullptr;
+	QLabel *versionLabel = nullptr;
+	QLabel *updateStatusLabel = nullptr;
+	QPushButton *checkUpdateBtn = nullptr;
+	QPushButton *installUpdateBtn = nullptr;
+	QPushButton *skipUpdateBtn = nullptr;
+	QWidget *updatePanel = nullptr;
 };

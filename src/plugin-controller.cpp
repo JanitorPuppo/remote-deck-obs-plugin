@@ -26,6 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMainWindow>
+#include <QAbstractButton>
+#include <QMessageBox>
 
 #include <functional>
 
@@ -49,6 +51,48 @@ PluginController::PluginController(QObject *parent) : QObject(parent)
 	});
 	connect(&deviceAuth, &DeviceAuth::completed, this, &PluginController::onAuthCompleted);
 	connect(&deviceAuth, &DeviceAuth::failed, this, &PluginController::onAuthFailed);
+	connect(&autoUpdate, &AutoUpdate::stateChanged, this, [this]() {
+		emit statusChanged();
+
+		if (pendingUpdateInstall && autoUpdate.updateFailed())
+			pendingUpdateInstall = false;
+
+		if (pendingUpdateInstall && autoUpdate.updateReady()) {
+			autoUpdate.applyUpdateAndQuit();
+			return;
+		}
+
+		const QString version = autoUpdate.availableVersion();
+		if (autoUpdate.updateAvailable() && !autoUpdate.isBusy() && !autoUpdate.updateReady() &&
+		    !version.isEmpty() && version != updatePromptShownForVersion) {
+			updatePromptShownForVersion = version;
+			auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			QMessageBox box(main);
+			box.setWindowTitle(QString::fromUtf8(obs_module_text("RemoteDeck.SettingsTitle")));
+			box.setText(autoUpdate.statusText());
+			box.setInformativeText(QString::fromUtf8(obs_module_text("RemoteDeck.UpdatePromptDetail")));
+			box.setStandardButtons(QMessageBox::Yes | QMessageBox::No | QMessageBox::Ignore);
+			box.setDefaultButton(QMessageBox::Yes);
+			box.button(QMessageBox::Yes)->setText(QString::fromUtf8(obs_module_text("RemoteDeck.UpdateNow")));
+			box.button(QMessageBox::No)->setText(QString::fromUtf8(obs_module_text("RemoteDeck.UpdateLater")));
+			box.button(QMessageBox::Ignore)->setText(QString::fromUtf8(obs_module_text("RemoteDeck.UpdateSkip")));
+			const int choice = box.exec();
+			if (choice == QMessageBox::Yes)
+				downloadAndInstallUpdate();
+			else if (choice == QMessageBox::Ignore)
+				autoUpdate.skipAvailableVersion();
+		}
+	});
+}
+
+void PluginController::downloadAndInstallUpdate()
+{
+	if (autoUpdate.updateReady()) {
+		autoUpdate.applyUpdateAndQuit();
+		return;
+	}
+	pendingUpdateInstall = true;
+	autoUpdate.downloadUpdate();
 }
 
 PluginController::~PluginController()
@@ -70,6 +114,7 @@ void PluginController::start()
 		return;
 	started = true;
 	audio.start();
+	autoUpdate.scheduleCheck();
 	if (currentSettings.autoConnect)
 		connectUpstream();
 }

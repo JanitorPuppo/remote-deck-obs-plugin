@@ -152,6 +152,8 @@ PluginSettings loadSettings()
 			settings.studioName = QString::fromUtf8(obs_data_get_string(data, "studio_name"));
 			settings.machineLabel = QString::fromUtf8(obs_data_get_string(data, "machine_label"));
 			settings.instanceId = QString::fromUtf8(obs_data_get_string(data, "instance_id"));
+			settings.skippedUpdateVersion =
+				QString::fromUtf8(obs_data_get_string(data, "skipped_update_version"));
 			settings.autoConnect = obs_data_get_bool(data, "auto_connect");
 			if (!obs_data_has_user_value(data, "auto_connect"))
 				settings.autoConnect = true;
@@ -196,6 +198,7 @@ bool saveSettings(const PluginSettings &settings)
 	obs_data_set_string(data, "studio_name", settings.studioName.toUtf8().constData());
 	obs_data_set_string(data, "machine_label", settings.machineLabel.toUtf8().constData());
 	obs_data_set_string(data, "instance_id", settings.instanceId.toUtf8().constData());
+	obs_data_set_string(data, "skipped_update_version", settings.skippedUpdateVersion.toUtf8().constData());
 	obs_data_set_bool(data, "auto_connect", settings.autoConnect);
 
 	const bool ok = obs_data_save_json_safe(data, path, "tmp", "bak");

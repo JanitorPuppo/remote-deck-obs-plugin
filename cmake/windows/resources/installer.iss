@@ -1,12 +1,12 @@
 ; Inno Setup script. Defines can be passed from ISCC:
-;   /DMyAppVersion=0.6.5
+;   /DMyAppVersion=0.6.6
 ;   /DSourceDir=release\RelWithDebInfo
 ;   /DOutputDir=release
-;   /DOutputBaseFilename=obs-remote-deck-0.6.5-windows-installer
+;   /DOutputBaseFilename=obs-remote-deck-0.6.6-windows-installer
 
 #define MyAppName "Remote Deck for OBS"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.6.5"
+  #define MyAppVersion "0.6.6"
 #endif
 #define MyAppPublisher "Remote Deck"
 #ifndef SourceDir
@@ -30,7 +30,7 @@ AppMutex={#MyAppName}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
-DefaultDirName={commonappdata}\obs-studio\plugins\obs-remote-deck
+DefaultDirName={userappdata}\obs-studio\plugins\obs-remote-deck
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
@@ -41,7 +41,8 @@ SolidCompression=yes
 LZMAAlgorithm=1
 WizardStyle=modern
 WizardResizable=yes
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog commandline
 DirExistsWarning=no
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={uninstallexe}
@@ -73,47 +74,149 @@ begin
   end;
 end;
 
+function UninstallRegPath(): String;
+begin
+  Result := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#emit SetupSetting("AppId")}_is1';
+end;
+
+function GetUninstallStringFromRoot(RootKey: Integer): String;
+begin
+  Result := '';
+  RegQueryStringValue(RootKey, UninstallRegPath(), 'UninstallString', Result);
+end;
+
+function GetUninstallString(): String;
+begin
+  Result := GetUninstallStringFromRoot(HKLM);
+  if Result = '' then
+    Result := GetUninstallStringFromRoot(HKCU);
+end;
+
+function LegacyProgramDataDir(): String;
+begin
+  Result := ExpandConstant('{commonappdata}\obs-studio\plugins\obs-remote-deck');
+end;
+
+function LegacyProgramDataExists(): Boolean;
+begin
+  Result := DirExists(LegacyProgramDataDir());
+end;
+
+function NeedsLegacyMigration(): Boolean;
+begin
+  Result := LegacyProgramDataExists() or (GetUninstallStringFromRoot(HKLM) <> '');
+end;
+
+function ParamMigrateLegacy(): Boolean;
+begin
+  Result := ExpandConstant('{param:MIGRATELEGACY|0}') = '1';
+end;
+
+function BuildRelaunchParams(): String;
+var
+  Params: String;
+begin
+  Params := '';
+  if WizardSilent() then
+    Params := Params + ' /VERYSILENT /SUPPRESSMSGBOXES /NORESTART';
+  Params := Params + ' /CURRENTUSER /MIGRATELEGACY=1';
+  Result := Trim(Params);
+end;
+
+function RelaunchElevatedForMigration(): Boolean;
+var
+  ResultCode: Integer;
+  Params: String;
+begin
+  Params := BuildRelaunchParams();
+  if ShellExec('runas', ExpandConstant('{srcexe}'), Params, '', SW_SHOW, ewNoWait, ResultCode) then
+    Result := True
+  else
+    Result := False;
+end;
+
 function InitializeSetup(): Boolean;
 begin
   if IsAppRunning('obs64.exe') or IsAppRunning('obs.exe') then
   begin
-    MsgBox('Quit OBS first. In OBS, click File, then Exit. Then run this installer again.',
-      mbError, MB_OK);
+    if not WizardSilent() then
+      MsgBox('Quit OBS first. In OBS, click File, then Exit. Then run this installer again.',
+        mbError, MB_OK);
     Result := False;
     exit;
   end;
-  Result := True;
-end;
 
-function GetUninstallString(): String;
-var
-  sUnInstPath: String;
-  sUnInstallString: String;
-begin
-  sUnInstPath := ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#emit SetupSetting("AppId")}_is1');
-  sUnInstallString := '';
-  if not RegQueryStringValue(HKLM, sUnInstPath, 'UninstallString', sUnInstallString) then
-    RegQueryStringValue(HKCU, sUnInstPath, 'UninstallString', sUnInstallString);
-  Result := sUnInstallString;
+  if NeedsLegacyMigration() and not IsAdminInstallMode then
+  begin
+    if ParamMigrateLegacy() then
+    begin
+      if not WizardSilent() then
+        MsgBox('This installer must run as administrator once to remove the older all-users copy.',
+          mbError, MB_OK);
+      Result := False;
+      exit;
+    end;
+
+    if RelaunchElevatedForMigration() then
+    begin
+      Result := False;
+      exit;
+    end;
+
+    if not WizardSilent() then
+      MsgBox('Could not elevate to remove the older all-users install. Run the installer as administrator.',
+        mbError, MB_OK);
+    Result := False;
+    exit;
+  end;
+
+  Result := True;
 end;
 
 function UnInstallOldVersion(): Integer;
 var
   sUnInstallString: String;
   iResultCode: Integer;
+  UninstallParams: String;
 begin
   Result := 0;
   sUnInstallString := GetUninstallString();
   if sUnInstallString <> '' then
   begin
     sUnInstallString := RemoveQuotes(sUnInstallString);
-    if Exec(sUnInstallString, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, iResultCode) then
+    UninstallParams := '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES';
+    if not IsAdminInstallMode then
+      UninstallParams := UninstallParams + ' /CURRENTUSER';
+    if Exec(sUnInstallString, UninstallParams, '', SW_HIDE, ewWaitUntilTerminated, iResultCode) then
       Result := 3
     else
       Result := 2;
   end
   else
     Result := 1;
+end;
+
+function UninstallLegacyProgramData(): Boolean;
+var
+  sUnInstallString: String;
+  iResultCode: Integer;
+  LegacyDir: String;
+begin
+  Result := True;
+  sUnInstallString := GetUninstallStringFromRoot(HKLM);
+  if sUnInstallString <> '' then
+  begin
+    sUnInstallString := RemoveQuotes(sUnInstallString);
+    if not Exec(sUnInstallString, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, iResultCode) then
+      Result := False;
+  end;
+
+  LegacyDir := LegacyProgramDataDir();
+  if DirExists(LegacyDir) then
+  begin
+    if not DelTree(LegacyDir, True, True, True) then
+      Result := False;
+  end;
 end;
 
 function IsUpgrade(): Boolean;
@@ -125,6 +228,8 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
   begin
+    if IsAdminInstallMode and NeedsLegacyMigration() then
+      UninstallLegacyProgramData();
     if IsUpgrade() then
       UnInstallOldVersion();
   end;

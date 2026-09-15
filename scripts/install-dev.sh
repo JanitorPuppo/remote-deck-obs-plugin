@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the local-dev plugin and install it into OBS (ProgramData).
+# Build the local-dev plugin and install it into OBS (per-user AppData).
 # Quit OBS first — Windows locks the DLL while it is running.
 set -euo pipefail
 
@@ -13,12 +13,12 @@ build_dll="$build_dir/$config/${plugin_id}.dll"
 build_pdb="$build_dir/$config/${plugin_id}.pdb"
 locale_src="$root/data/locale/en-US.ini"
 
-program_data="${PROGRAMDATA:-${ALLUSERSPROFILE:-C:/ProgramData}}"
 appdata="${APPDATA:-${HOME}/AppData/Roaming}"
-dest_root="${program_data}/obs-studio/plugins/${plugin_id}"
+program_data="${PROGRAMDATA:-${ALLUSERSPROFILE:-C:/ProgramData}}"
+dest_root="${appdata}/obs-studio/plugins/${plugin_id}"
 dest_bin="${dest_root}/bin/64bit"
 dest_locale="${dest_root}/data/locale/en-US.ini"
-legacy_root="${appdata}/obs-studio/plugins/${plugin_id}"
+legacy_root="${program_data}/obs-studio/plugins/${plugin_id}"
 legacy_dll="${legacy_root}/bin/64bit/${plugin_id}.dll"
 
 obs_running() {
@@ -51,13 +51,9 @@ if [[ -f "$build_pdb" ]]; then
 fi
 
 if [[ -f "$legacy_dll" ]]; then
-	if cmp -s "$build_dll" "$legacy_dll" 2>/dev/null; then
-		echo "Per-user plugin copy already matches dev build: ${legacy_dll}"
-	else
-		echo "Removing stale per-user plugin copy (OBS may load this instead of ProgramData):"
-		echo "  ${legacy_root}"
-		rm -rf "$legacy_root"
-	fi
+	echo "Removing stale all-users plugin copy (OBS may load this instead of AppData):"
+	echo "  ${legacy_root}"
+	rm -rf "$legacy_root" 2>/dev/null || echo "Note: could not remove ProgramData copy (run as admin or use the installer)."
 fi
 
 dest_tls="${dest_root}/data/tls"

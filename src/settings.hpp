@@ -29,6 +29,7 @@ struct PluginSettings {
 	QString studioName;
 	QString machineLabel;
 	QString instanceId;
+	QString skippedUpdateVersion;
 	bool autoConnect = true;
 
 	bool isAuthenticated() const { return !remoteDeckToken.trimmed().isEmpty(); }

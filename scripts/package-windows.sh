@@ -48,3 +48,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$root/scr
 	-OutputDir "$release_win"
 
 echo "Done: release/obs-remote-deck-${version}-windows-installer.exe"
+echo "Done: release/latest.json"
