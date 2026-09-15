@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMainWindow>
 
@@ -211,6 +212,8 @@ void PluginController::sendHelloAndInputs()
 	hello.insert("machineLabel", currentSettings.resolvedMachineLabel());
 	if (!currentSettings.instanceId.isEmpty())
 		hello.insert("instanceId", currentSettings.instanceId);
+	hello.insert("features", QJsonArray{QString::fromUtf8(protocol::kFeatureFilters)});
+	hello.insert("filterKinds", supportedAudioFilterKinds());
 	client.sendFrame(makeFrame(protocol::kHello, hello));
 	sendInputs();
 }
@@ -233,8 +236,45 @@ void PluginController::applyOnObsThread(const std::function<void()> &fn)
 		heap, false);
 }
 
+void PluginController::sendFilterResult(FilterOpResult result, const QString &requestId)
+{
+	switch (result) {
+	case FilterOpResult::Ok:
+		return;
+	case FilterOpResult::InputNotFound:
+		client.sendFrame(makeErrorFrame(protocol::kErrInputNotFound, QStringLiteral("Audio input not found"),
+						requestId));
+		return;
+	case FilterOpResult::FilterNotFound:
+		client.sendFrame(makeErrorFrame(protocol::kErrFilterNotFound, QStringLiteral("Audio filter not found"),
+						requestId));
+		return;
+	case FilterOpResult::UnsupportedKind:
+		client.sendFrame(makeErrorFrame(protocol::kErrUnsupportedFilterKind,
+						QStringLiteral("Unsupported audio filter kind"), requestId));
+		return;
+	case FilterOpResult::NameConflict:
+		client.sendFrame(makeErrorFrame(protocol::kErrFilterNameConflict,
+						QStringLiteral("A filter with that name already exists"), requestId));
+		return;
+	case FilterOpResult::CreateFailed:
+		client.sendFrame(makeErrorFrame(protocol::kErrFilterCreateFailed,
+						QStringLiteral("Failed to create audio filter"), requestId));
+		return;
+	}
+}
+
 void PluginController::handleFrame(const Frame &frame)
 {
+	const auto hasSourceRef = [](const QJsonObject &payload) {
+		return !payload.value(QStringLiteral("name")).toString().isEmpty() ||
+		       !payload.value(QStringLiteral("id")).toString().isEmpty();
+	};
+	const auto hasFilterRef = [](const QJsonObject &payload) {
+		return !payload.value(QStringLiteral("filterName")).toString().isEmpty() ||
+		       !payload.value(QStringLiteral("filterId")).toString().isEmpty();
+	};
+
 	if (frame.type == protocol::kPing) {
 		client.sendFrame(makeFrame(protocol::kPong, {}, frame.id));
 		return;
@@ -276,6 +316,87 @@ void PluginController::handleFrame(const Frame &frame)
 				client.sendFrame(makeErrorFrame(protocol::kErrInputNotFound,
 								QStringLiteral("Audio input not found"), requestId));
 			}
+		});
+		return;
+	}
+	if (frame.type == protocol::kInputFilterEnable) {
+		if (!hasSourceRef(frame.payload) || !hasFilterRef(frame.payload) ||
+		    !frame.payload.contains(QStringLiteral("enabled"))) {
+			client.sendFrame(makeErrorFrame(
+				protocol::kErrInvalidPayload,
+				QStringLiteral("input.filter.enable requires source, filter, and enabled"), frame.id));
+			return;
+		}
+		const QString name = frame.payload.value("name").toString();
+		const QString id = frame.payload.value("id").toString();
+		const QString filterName = frame.payload.value("filterName").toString();
+		const QString filterId = frame.payload.value("filterId").toString();
+		const bool enabled = frame.payload.value("enabled").toBool();
+		applyOnObsThread([this, name, id, filterName, filterId, enabled, requestId = frame.id]() {
+			sendFilterResult(audio.setFilterEnabled(name, id, filterName, filterId, enabled), requestId);
+		});
+		return;
+	}
+	if (frame.type == protocol::kInputFilterUpdate) {
+		if (!hasSourceRef(frame.payload) || !hasFilterRef(frame.payload) ||
+		    !frame.payload.value(QStringLiteral("settings")).isObject()) {
+			client.sendFrame(makeErrorFrame(
+				protocol::kErrInvalidPayload,
+				QStringLiteral("input.filter.update requires source, filter, and settings object"),
+				frame.id));
+			return;
+		}
+		const QString name = frame.payload.value("name").toString();
+		const QString id = frame.payload.value("id").toString();
+		const QString filterName = frame.payload.value("filterName").toString();
+		const QString filterId = frame.payload.value("filterId").toString();
+		const QJsonObject settings = frame.payload.value("settings").toObject();
+		applyOnObsThread([this, name, id, filterName, filterId, settings, requestId = frame.id]() {
+			sendFilterResult(audio.updateFilterSettings(name, id, filterName, filterId, settings),
+					 requestId);
+		});
+		return;
+	}
+	if (frame.type == protocol::kInputFilterAdd) {
+		const QString kind = frame.payload.value("kind").toString();
+		if (!hasSourceRef(frame.payload) || kind.isEmpty()) {
+			client.sendFrame(makeErrorFrame(protocol::kErrInvalidPayload,
+							QStringLiteral("input.filter.add requires source and kind"),
+							frame.id));
+			return;
+		}
+		if (frame.payload.contains(QStringLiteral("settings")) &&
+		    !frame.payload.value(QStringLiteral("settings")).isObject()) {
+			client.sendFrame(makeErrorFrame(protocol::kErrInvalidPayload,
+							QStringLiteral("input.filter.add settings must be an object"),
+							frame.id));
+			return;
+		}
+		const QString name = frame.payload.value("name").toString();
+		const QString id = frame.payload.value("id").toString();
+		const QString filterName = frame.payload.value("filterName").toString();
+		const QJsonObject settings = frame.payload.value("settings").toObject();
+		const bool enabled = frame.payload.contains(QStringLiteral("enabled"))
+					     ? frame.payload.value("enabled").toBool()
+					     : true;
+		applyOnObsThread([this, name, id, kind, filterName, settings, enabled, requestId = frame.id]() {
+			sendFilterResult(audio.addFilter(name, id, kind, filterName, settings, enabled), requestId);
+		});
+		return;
+	}
+	if (frame.type == protocol::kInputFilterRemove) {
+		if (!hasSourceRef(frame.payload) || !hasFilterRef(frame.payload)) {
+			client.sendFrame(makeErrorFrame(protocol::kErrInvalidPayload,
+							QStringLiteral("input.filter.remove requires source and filter"),
+							frame.id));
+			return;
+		}
+		const QString name = frame.payload.value("name").toString();
+		const QString id = frame.payload.value("id").toString();
+		const QString filterName = frame.payload.value("filterName").toString();
+		const QString filterId = frame.payload.value("filterId").toString();
+		applyOnObsThread([this, name, id, filterName, filterId, requestId = frame.id]() {
+			sendFilterResult(audio.removeFilter(name, id, filterName, filterId), requestId);
 		});
 		return;
 	}

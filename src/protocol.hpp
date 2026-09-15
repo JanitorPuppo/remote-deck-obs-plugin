@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <optional>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
@@ -32,6 +33,10 @@ constexpr auto kInputs = "inputs";
 constexpr auto kState = "state";
 constexpr auto kInputMute = "input.mute";
 constexpr auto kInputVolume = "input.volume";
+constexpr auto kInputFilterEnable = "input.filter.enable";
+constexpr auto kInputFilterUpdate = "input.filter.update";
+constexpr auto kInputFilterAdd = "input.filter.add";
+constexpr auto kInputFilterRemove = "input.filter.remove";
 constexpr auto kInputsGet = "inputs.get";
 constexpr auto kPing = "ping";
 constexpr auto kPong = "pong";
@@ -40,9 +45,17 @@ constexpr auto kError = "error";
 constexpr auto kErrUnknownMethod = "unknown_method";
 constexpr auto kErrInvalidPayload = "invalid_payload";
 constexpr auto kErrInputNotFound = "input_not_found";
+constexpr auto kErrFilterNotFound = "filter_not_found";
+constexpr auto kErrUnsupportedFilterKind = "unsupported_filter_kind";
+constexpr auto kErrFilterNameConflict = "filter_name_conflict";
+constexpr auto kErrFilterCreateFailed = "filter_create_failed";
 constexpr auto kErrProtocol = "protocol_error";
 
+constexpr auto kFeatureFilters = "filters";
+
 }
+
+QJsonArray supportedAudioFilterKinds();
 
 struct Frame {
 	int version = kProtocolVersion;

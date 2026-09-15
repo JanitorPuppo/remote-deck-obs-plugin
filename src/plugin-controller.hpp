@@ -62,6 +62,7 @@ private:
 	void sendInputs(const QString &id = {});
 	void handleFrame(const Frame &frame);
 	void applyOnObsThread(const std::function<void()> &fn);
+	void sendFilterResult(FilterOpResult result, const QString &requestId);
 	void onAuthCompleted(const QString &token, const QString &apiBase, const QString &wssUrl,
 			     const QString &studioId, const QString &studioName);
 	void onAuthFailed(const QString &message);

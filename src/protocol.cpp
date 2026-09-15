@@ -18,8 +18,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "protocol.hpp"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
+
+QJsonArray supportedAudioFilterKinds()
+{
+	return QJsonArray{
+		QStringLiteral("noise_suppress_filter"),
+		QStringLiteral("noise_gate_filter"),
+		QStringLiteral("compressor_filter"),
+		QStringLiteral("limiter_filter"),
+		QStringLiteral("expander_filter"),
+		QStringLiteral("upward_compressor_filter"),
+		QStringLiteral("gain_filter"),
+		QStringLiteral("basic_eq_filter"),
+		QStringLiteral("invert_polarity_filter"),
+	};
+}
 
 std::optional<Frame> parseFrame(const QString &text)
 {

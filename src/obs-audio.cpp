@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "obs-audio.hpp"
+#include "protocol.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -25,9 +26,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <algorithm>
 #include <cmath>
 
+#include <QByteArray>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonValue>
 #include <QMetaObject>
 #include <QPointer>
+#include <QSet>
 
 namespace {
 
@@ -48,6 +53,48 @@ float dbToVolume(double db)
 	return obs_db_to_mul(static_cast<float>(db));
 }
 
+const QSet<QString> &supportedFilterKindSet()
+{
+	static const QSet<QString> kinds = []() {
+		QSet<QString> set;
+		const QJsonArray list = supportedAudioFilterKinds();
+		for (const QJsonValue &value : list)
+			set.insert(value.toString());
+		return set;
+	}();
+	return kinds;
+}
+
+obs_data_t *obsDataFromJson(const QJsonObject &obj)
+{
+	if (obj.isEmpty())
+		return obs_data_create();
+	const QByteArray json = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+	obs_data_t *data = obs_data_create_from_json(json.constData());
+	return data ? data : obs_data_create();
+}
+
+QString uniquifyFilterName(obs_source_t *source, QString base)
+{
+	if (base.isEmpty())
+		base = QStringLiteral("Filter");
+	auto taken = [source](const QString &candidate) {
+		obs_source_t *existing = obs_source_get_filter_by_name(source, candidate.toUtf8().constData());
+		if (!existing)
+			return false;
+		obs_source_release(existing);
+		return true;
+	};
+	if (!taken(base))
+		return base;
+	for (int i = 2; i < 10000; ++i) {
+		const QString candidate = QStringLiteral("%1 %2").arg(base).arg(i);
+		if (!taken(candidate))
+			return candidate;
+	}
+	return base + QStringLiteral(" copy");
+}
+
 }
 
 ObsAudio::ObsAudio(QObject *parent) : QObject(parent) {}
@@ -66,6 +113,70 @@ bool ObsAudio::isAudioInput(obs_source_t *source)
 	return (obs_source_get_output_flags(source) & OBS_SOURCE_AUDIO) != 0;
 }
 
+bool ObsAudio::isSupportedAudioFilter(obs_source_t *filter)
+{
+	if (!filter)
+		return false;
+	if (obs_source_get_type(filter) != OBS_SOURCE_TYPE_FILTER)
+		return false;
+	if ((obs_source_get_output_flags(filter) & OBS_SOURCE_AUDIO) == 0)
+		return false;
+	const char *kind = obs_source_get_unversioned_id(filter);
+	if (!kind || !kind[0])
+		return false;
+	return supportedFilterKindSet().contains(QString::fromUtf8(kind));
+}
+
+QJsonObject ObsAudio::filterSettings(obs_source_t *filter)
+{
+	obs_data_t *settings = obs_source_get_settings(filter);
+	if (!settings)
+		return {};
+	const char *json = obs_data_get_json(settings);
+	QJsonObject obj;
+	if (json && json[0]) {
+		const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json));
+		if (doc.isObject())
+			obj = doc.object();
+	}
+	obs_data_release(settings);
+	return obj;
+}
+
+QJsonObject ObsAudio::describeFilter(obs_source_t *filter, int index)
+{
+	QJsonObject obj;
+	const char *uuid = obs_source_get_uuid(filter);
+	const char *name = obs_source_get_name(filter);
+	const char *kind = obs_source_get_unversioned_id(filter);
+	obj.insert("id", QString::fromUtf8(uuid ? uuid : ""));
+	obj.insert("name", QString::fromUtf8(name ? name : ""));
+	obj.insert("kind", QString::fromUtf8(kind ? kind : ""));
+	obj.insert("enabled", obs_source_enabled(filter));
+	obj.insert("index", index);
+	obj.insert("settings", filterSettings(filter));
+	return obj;
+}
+
+QJsonArray ObsAudio::describeFilters(obs_source_t *source)
+{
+	QJsonArray filters;
+	struct Ctx {
+		QJsonArray *list;
+		int index;
+	} ctx{&filters, 0};
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *c = static_cast<Ctx *>(param);
+			if (isSupportedAudioFilter(filter))
+				c->list->append(describeFilter(filter, c->index));
+			c->index++;
+		},
+		&ctx);
+	return filters;
+}
+
 struct SceneMembershipWalk {
 	QString topSceneName;
 	QSet<QString> walking;
@@ -82,6 +193,7 @@ QJsonObject ObsAudio::describeSource(obs_source_t *source, const QHash<QString, 
 	obj.insert("name", QString::fromUtf8(name ? name : ""));
 	obj.insert("muted", obs_source_muted(source));
 	obj.insert("volumeDb", volumeToDb(obs_source_get_volume(source)));
+	obj.insert("filters", describeFilters(source));
 	if (membership && !id.isEmpty()) {
 		const QStringList sceneNames = membership->value(id);
 		if (!sceneNames.isEmpty()) {
@@ -235,6 +347,7 @@ void ObsAudio::onSourceDestroy(void *data, calldata_t *cd)
 	const char *uuid = obs_source_get_uuid(source);
 	const QString id = QString::fromUtf8(uuid ? uuid : "");
 	self->invokeOnQt([self, id]() {
+		self->forgetFiltersForParent(id);
 		self->trackedIds.remove(id);
 		emit self->inputsChanged();
 	});
@@ -286,25 +399,166 @@ void ObsAudio::trackSource(obs_source_t *source)
 		return;
 	const char *uuid = obs_source_get_uuid(source);
 	const QString id = QString::fromUtf8(uuid ? uuid : "");
-	if (id.isEmpty() || trackedIds.contains(id))
+	if (id.isEmpty())
 		return;
-	trackedIds.insert(id);
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	signal_handler_connect(sh, "mute", onSourceMute, this);
-	signal_handler_connect(sh, "volume", onSourceVolume, this);
-	signal_handler_connect(sh, "rename", onSourceRename, this);
+	if (!trackedIds.contains(id)) {
+		trackedIds.insert(id);
+		signal_handler_t *sh = obs_source_get_signal_handler(source);
+		signal_handler_connect(sh, "mute", onSourceMute, this);
+		signal_handler_connect(sh, "volume", onSourceVolume, this);
+		signal_handler_connect(sh, "rename", onSourceRename, this);
+		signal_handler_connect(sh, "filter_add", onFilterAdd, this);
+		signal_handler_connect(sh, "filter_remove", onFilterRemove, this);
+		signal_handler_connect(sh, "reorder_filters", onFiltersReordered, this);
+	}
+	trackFilters(source);
 }
 
 void ObsAudio::untrackSource(obs_source_t *source)
 {
 	if (!source)
 		return;
+	untrackFilters(source);
 	signal_handler_t *sh = obs_source_get_signal_handler(source);
 	signal_handler_disconnect(sh, "mute", onSourceMute, this);
 	signal_handler_disconnect(sh, "volume", onSourceVolume, this);
 	signal_handler_disconnect(sh, "rename", onSourceRename, this);
+	signal_handler_disconnect(sh, "filter_add", onFilterAdd, this);
+	signal_handler_disconnect(sh, "filter_remove", onFilterRemove, this);
+	signal_handler_disconnect(sh, "reorder_filters", onFiltersReordered, this);
 	const char *uuid = obs_source_get_uuid(source);
 	trackedIds.remove(QString::fromUtf8(uuid ? uuid : ""));
+}
+
+void ObsAudio::trackFilter(obs_source_t *filter)
+{
+	if (!isSupportedAudioFilter(filter))
+		return;
+	const char *uuid = obs_source_get_uuid(filter);
+	const QString id = QString::fromUtf8(uuid ? uuid : "");
+	if (id.isEmpty() || trackedFilterIds.contains(id))
+		return;
+	trackedFilterIds.insert(id);
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	if (parent) {
+		const char *parentUuid = obs_source_get_uuid(parent);
+		filterParentIds.insert(id, QString::fromUtf8(parentUuid ? parentUuid : ""));
+	}
+	signal_handler_t *sh = obs_source_get_signal_handler(filter);
+	signal_handler_connect(sh, "enable", onFilterChanged, this);
+	signal_handler_connect(sh, "rename", onFilterChanged, this);
+	signal_handler_connect(sh, "update", onFilterChanged, this);
+}
+
+void ObsAudio::untrackFilter(obs_source_t *filter)
+{
+	if (!filter)
+		return;
+	signal_handler_t *sh = obs_source_get_signal_handler(filter);
+	signal_handler_disconnect(sh, "enable", onFilterChanged, this);
+	signal_handler_disconnect(sh, "rename", onFilterChanged, this);
+	signal_handler_disconnect(sh, "update", onFilterChanged, this);
+	const char *uuid = obs_source_get_uuid(filter);
+	const QString id = QString::fromUtf8(uuid ? uuid : "");
+	trackedFilterIds.remove(id);
+	filterParentIds.remove(id);
+}
+
+void ObsAudio::trackFilters(obs_source_t *source)
+{
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			static_cast<ObsAudio *>(param)->trackFilter(filter);
+		},
+		this);
+}
+
+void ObsAudio::untrackFilters(obs_source_t *source)
+{
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			static_cast<ObsAudio *>(param)->untrackFilter(filter);
+		},
+		this);
+}
+
+void ObsAudio::forgetFiltersForParent(const QString &parentId)
+{
+	for (auto it = filterParentIds.begin(); it != filterParentIds.end();) {
+		if (it.value() == parentId) {
+			trackedFilterIds.remove(it.key());
+			it = filterParentIds.erase(it);
+		} else {
+			++it;
+		}
+	}
+}
+
+void ObsAudio::onFilterAdd(void *data, calldata_t *cd)
+{
+	auto *self = static_cast<ObsAudio *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	obs_source_t *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "filter"));
+	if (!self || !source || !filter)
+		return;
+	obs_source_t *sourceRef = obs_source_get_ref(source);
+	obs_source_t *filterRef = obs_source_get_ref(filter);
+	self->invokeOnQt([self, sourceRef, filterRef]() {
+		self->trackFilter(filterRef);
+		self->emitState(sourceRef);
+		obs_source_release(sourceRef);
+		obs_source_release(filterRef);
+	});
+}
+
+void ObsAudio::onFilterRemove(void *data, calldata_t *cd)
+{
+	auto *self = static_cast<ObsAudio *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	obs_source_t *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "filter"));
+	if (!self || !source)
+		return;
+	obs_source_t *sourceRef = obs_source_get_ref(source);
+	obs_source_t *filterRef = filter ? obs_source_get_ref(filter) : nullptr;
+	self->invokeOnQt([self, sourceRef, filterRef]() {
+		if (filterRef) {
+			self->untrackFilter(filterRef);
+			obs_source_release(filterRef);
+		}
+		self->emitState(sourceRef);
+		obs_source_release(sourceRef);
+	});
+}
+
+void ObsAudio::onFiltersReordered(void *data, calldata_t *cd)
+{
+	auto *self = static_cast<ObsAudio *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!self || !source)
+		return;
+	obs_source_t *sourceRef = obs_source_get_ref(source);
+	self->invokeOnQt([self, sourceRef]() {
+		self->emitState(sourceRef);
+		obs_source_release(sourceRef);
+	});
+}
+
+void ObsAudio::onFilterChanged(void *data, calldata_t *cd)
+{
+	auto *self = static_cast<ObsAudio *>(data);
+	obs_source_t *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!self || !filter)
+		return;
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	if (!parent)
+		return;
+	obs_source_t *parentRef = obs_source_get_ref(parent);
+	self->invokeOnQt([self, parentRef]() {
+		self->emitState(parentRef);
+		obs_source_release(parentRef);
+	});
 }
 
 void ObsAudio::emitState(obs_source_t *source)
@@ -386,6 +640,8 @@ void ObsAudio::stop()
 		},
 		&ctx);
 	trackedIds.clear();
+	trackedFilterIds.clear();
+	filterParentIds.clear();
 }
 
 void ObsAudio::refresh()
@@ -414,15 +670,45 @@ obs_source_t *ObsAudio::findSource(const QString &name, const QString &id) const
 	return obs_get_source_by_name(name.toUtf8().constData());
 }
 
-bool ObsAudio::setMuted(const QString &name, bool muted, const QString &id)
+obs_source_t *ObsAudio::acquireAudioInput(const QString &name, const QString &id) const
 {
 	obs_source_t *source = findSource(name, id);
 	if (!source)
-		return false;
+		return nullptr;
 	if (!isAudioInput(source)) {
 		obs_source_release(source);
-		return false;
+		return nullptr;
 	}
+	return source;
+}
+
+obs_source_t *ObsAudio::findFilter(obs_source_t *source, const QString &filterName, const QString &filterId) const
+{
+	if (!source)
+		return nullptr;
+	if (!filterId.isEmpty()) {
+		obs_source_t *byId = obs_get_source_by_uuid(filterId.toUtf8().constData());
+		if (byId) {
+			if (obs_filter_get_parent(byId) == source && isSupportedAudioFilter(byId))
+				return byId;
+			obs_source_release(byId);
+		}
+	}
+	if (filterName.isEmpty())
+		return nullptr;
+	obs_source_t *byName = obs_source_get_filter_by_name(source, filterName.toUtf8().constData());
+	if (byName && !isSupportedAudioFilter(byName)) {
+		obs_source_release(byName);
+		return nullptr;
+	}
+	return byName;
+}
+
+bool ObsAudio::setMuted(const QString &name, bool muted, const QString &id)
+{
+	obs_source_t *source = acquireAudioInput(name, id);
+	if (!source)
+		return false;
 	obs_source_set_muted(source, muted);
 	obs_source_release(source);
 	return true;
@@ -430,15 +716,111 @@ bool ObsAudio::setMuted(const QString &name, bool muted, const QString &id)
 
 bool ObsAudio::setVolumeDb(const QString &name, double volumeDb, const QString &id)
 {
-	obs_source_t *source = findSource(name, id);
+	obs_source_t *source = acquireAudioInput(name, id);
 	if (!source)
 		return false;
-	if (!isAudioInput(source)) {
-		obs_source_release(source);
-		return false;
-	}
 	const double clamped = std::clamp(volumeDb, kMinVolumeDb, kMaxVolumeDb);
 	obs_source_set_volume(source, dbToVolume(clamped));
 	obs_source_release(source);
 	return true;
+}
+
+FilterOpResult ObsAudio::setFilterEnabled(const QString &name, const QString &id, const QString &filterName,
+					  const QString &filterId, bool enabled)
+{
+	obs_source_t *source = acquireAudioInput(name, id);
+	if (!source)
+		return FilterOpResult::InputNotFound;
+	obs_source_t *filter = findFilter(source, filterName, filterId);
+	if (!filter) {
+		obs_source_release(source);
+		return FilterOpResult::FilterNotFound;
+	}
+	obs_source_set_enabled(filter, enabled);
+	obs_source_release(filter);
+	obs_source_release(source);
+	return FilterOpResult::Ok;
+}
+
+FilterOpResult ObsAudio::updateFilterSettings(const QString &name, const QString &id, const QString &filterName,
+					      const QString &filterId, const QJsonObject &settings)
+{
+	obs_source_t *source = acquireAudioInput(name, id);
+	if (!source)
+		return FilterOpResult::InputNotFound;
+	obs_source_t *filter = findFilter(source, filterName, filterId);
+	if (!filter) {
+		obs_source_release(source);
+		return FilterOpResult::FilterNotFound;
+	}
+	obs_data_t *data = obsDataFromJson(settings);
+	obs_source_update(filter, data);
+	obs_data_release(data);
+	obs_source_release(filter);
+	obs_source_release(source);
+	return FilterOpResult::Ok;
+}
+
+FilterOpResult ObsAudio::addFilter(const QString &name, const QString &id, const QString &kind,
+				   const QString &filterName, const QJsonObject &settings, bool enabled)
+{
+	if (!supportedFilterKindSet().contains(kind))
+		return FilterOpResult::UnsupportedKind;
+
+	obs_source_t *source = acquireAudioInput(name, id);
+	if (!source)
+		return FilterOpResult::InputNotFound;
+
+	const QByteArray kindUtf8 = kind.toUtf8();
+	const char *latest = obs_get_latest_input_type_id(kindUtf8.constData());
+	const char *createId = (latest && latest[0]) ? latest : kindUtf8.constData();
+
+	QString resolvedName = filterName.trimmed();
+	if (resolvedName.isEmpty()) {
+		const char *display = obs_source_get_display_name(createId);
+		if (!display || !display[0])
+			display = obs_source_get_display_name(kindUtf8.constData());
+		resolvedName = uniquifyFilterName(
+			source, QString::fromUtf8(display && display[0] ? display : kindUtf8.constData()));
+	} else {
+		obs_source_t *existing = obs_source_get_filter_by_name(source, resolvedName.toUtf8().constData());
+		if (existing) {
+			obs_source_release(existing);
+			obs_source_release(source);
+			return FilterOpResult::NameConflict;
+		}
+	}
+
+	obs_data_t *data = obsDataFromJson(settings);
+	const QByteArray nameUtf8 = resolvedName.toUtf8();
+	obs_source_t *filter = obs_source_create(createId, nameUtf8.constData(), data, nullptr);
+	obs_data_release(data);
+	if (!filter) {
+		obs_source_release(source);
+		return FilterOpResult::CreateFailed;
+	}
+
+	obs_source_filter_add(source, filter);
+	if (!enabled)
+		obs_source_set_enabled(filter, false);
+	obs_source_release(filter);
+	obs_source_release(source);
+	return FilterOpResult::Ok;
+}
+
+FilterOpResult ObsAudio::removeFilter(const QString &name, const QString &id, const QString &filterName,
+				      const QString &filterId)
+{
+	obs_source_t *source = acquireAudioInput(name, id);
+	if (!source)
+		return FilterOpResult::InputNotFound;
+	obs_source_t *filter = findFilter(source, filterName, filterId);
+	if (!filter) {
+		obs_source_release(source);
+		return FilterOpResult::FilterNotFound;
+	}
+	obs_source_filter_remove(source, filter);
+	obs_source_release(filter);
+	obs_source_release(source);
+	return FilterOpResult::Ok;
 }
