@@ -1,14 +1,14 @@
 ; Inno Setup script. Defines can be passed from ISCC:
-;   /DMyAppVersion=0.6.6
+;   /DMyAppVersion=0.6.7
 ;   /DSourceDir=release\RelWithDebInfo
 ;   /DOutputDir=release
-;   /DOutputBaseFilename=obs-remote-deck-0.6.6-windows-installer
+;   /DOutputBaseFilename=obs-remote-deck-0.6.7-windows-installer
 ;
 ; OBS 32 on Windows loads third-party plugins from ProgramData, not AppData.
 
 #define MyAppName "Remote Deck for OBS"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.6.6"
+  #define MyAppVersion "0.6.7"
 #endif
 #define MyAppPublisher "Remote Deck"
 #ifndef SourceDir
@@ -79,6 +79,14 @@ end;
 
 function InitializeSetup(): Boolean;
 begin
+  if not IsAdmin then
+  begin
+    MsgBox('Remote Deck must be installed as administrator so OBS can load it. Right-click the installer and choose Run as administrator.',
+      mbError, MB_OK);
+    Result := False;
+    exit;
+  end;
+
   if IsAppRunning('obs64.exe') or IsAppRunning('obs.exe') then
   begin
     MsgBox('Quit OBS first. In OBS, click File, then Exit. Then run this installer again.',
