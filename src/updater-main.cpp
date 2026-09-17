@@ -47,25 +47,23 @@ bool runInstaller(const std::wstring &installerPath)
 	if (installerPath.empty())
 		return false;
 
-	std::wstring commandLine = L"\"" + installerPath +
-				   L"\" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /CURRENTUSER";
+	SHELLEXECUTEINFOW info{};
+	info.cbSize = sizeof(info);
+	info.fMask = SEE_MASK_NOCLOSEPROCESS;
+	info.lpVerb = L"runas";
+	info.lpFile = installerPath.c_str();
+	info.lpParameters = L"/VERYSILENT /NORESTART /SUPPRESSMSGBOXES";
+	info.nShow = SW_SHOW;
 
-	STARTUPINFOW startupInfo{};
-	startupInfo.cb = sizeof(startupInfo);
-	PROCESS_INFORMATION processInfo{};
-
-	std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
-	mutableCommand.push_back(L'\0');
-
-	if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
-			    &startupInfo, &processInfo))
+	if (!ShellExecuteExW(&info))
+		return false;
+	if (!info.hProcess)
 		return false;
 
-	WaitForSingleObject(processInfo.hProcess, INFINITE);
+	WaitForSingleObject(info.hProcess, INFINITE);
 	DWORD exitCode = 1;
-	GetExitCodeProcess(processInfo.hProcess, &exitCode);
-	CloseHandle(processInfo.hProcess);
-	CloseHandle(processInfo.hThread);
+	GetExitCodeProcess(info.hProcess, &exitCode);
+	CloseHandle(info.hProcess);
 	return exitCode == 0;
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the local-dev plugin and install it into OBS (per-user AppData).
+# Build the local-dev plugin and install it into OBS (ProgramData).
 # Quit OBS first — Windows locks the DLL while it is running.
 set -euo pipefail
 
@@ -15,11 +15,10 @@ locale_src="$root/data/locale/en-US.ini"
 
 appdata="${APPDATA:-${HOME}/AppData/Roaming}"
 program_data="${PROGRAMDATA:-${ALLUSERSPROFILE:-C:/ProgramData}}"
-dest_root="${appdata}/obs-studio/plugins/${plugin_id}"
+dest_root="${program_data}/obs-studio/plugins/${plugin_id}"
 dest_bin="${dest_root}/bin/64bit"
 dest_locale="${dest_root}/data/locale/en-US.ini"
-legacy_root="${program_data}/obs-studio/plugins/${plugin_id}"
-legacy_dll="${legacy_root}/bin/64bit/${plugin_id}.dll"
+stale_user_root="${appdata}/obs-studio/plugins/${plugin_id}"
 
 obs_running() {
 	tasklist 2>/dev/null | grep -qiE '^obs64\.exe|^obs\.exe'
@@ -50,10 +49,10 @@ if [[ -f "$build_pdb" ]]; then
 	cp -f "$build_pdb" "${dest_bin}/${plugin_id}.pdb" || echo "Note: could not copy PDB (non-fatal)."
 fi
 
-if [[ -f "$legacy_dll" ]]; then
-	echo "Removing stale all-users plugin copy (OBS may load this instead of AppData):"
-	echo "  ${legacy_root}"
-	rm -rf "$legacy_root" 2>/dev/null || echo "Note: could not remove ProgramData copy (run as admin or use the installer)."
+if [[ -d "$stale_user_root" ]]; then
+	echo "Removing stale per-user plugin copy (OBS 32 loads ProgramData on Windows, not AppData):"
+	echo "  ${stale_user_root}"
+	rm -rf "$stale_user_root" 2>/dev/null || echo "Note: could not remove AppData copy."
 fi
 
 dest_tls="${dest_root}/data/tls"

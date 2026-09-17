@@ -16,9 +16,13 @@ if [[ -z "$version" || "$version" == "null" ]]; then
 	exit 1
 fi
 
-if [[ ! -f build_x64/CMakeCache.txt ]]; then
-	echo "Configuring windows-x64..."
-	cmake --preset windows-x64
+echo "Configuring windows-x64..."
+cmake --preset windows-x64
+
+configured="$(sed -n 's/^const char \*PLUGIN_VERSION = "\([^"]*\)";/\1/p' "$root/build_x64/plugin-support.c" | head -n 1)"
+if [[ "$configured" != "$version" ]]; then
+	echo "CMake PLUGIN_VERSION is '$configured' but buildspec.json is '$version'." >&2
+	exit 1
 fi
 
 echo "Building windows-x64..."

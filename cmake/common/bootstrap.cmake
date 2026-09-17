@@ -43,7 +43,10 @@ endif()
 # Add common module directories to default search path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/common")
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/buildspec.json" buildspec)
+set(_buildspec_path "${CMAKE_CURRENT_SOURCE_DIR}/buildspec.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_buildspec_path}")
+file(READ "${_buildspec_path}" buildspec)
+unset(_buildspec_path)
 
 string(JSON _name GET ${buildspec} name)
 string(JSON _website GET ${buildspec} website)
